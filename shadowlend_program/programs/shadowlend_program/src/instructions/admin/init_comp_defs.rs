@@ -4,9 +4,6 @@ use arcium_anchor::prelude::*;
 // Import ID from crate root (from declare_id! macro)
 use crate::ID;
 
-/// Computation definition offset for deposit circuit
-const COMP_DEF_OFFSET_COMPUTE_DEPOSIT: u32 = comp_def_offset("compute_deposit");
-
 /// Accounts for initializing the compute_deposit computation definition
 ///
 /// This registers the deposit circuit with Arcium MXE.

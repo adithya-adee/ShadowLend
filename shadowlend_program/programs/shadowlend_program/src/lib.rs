@@ -5,14 +5,13 @@ pub mod error;
 pub mod instructions;
 pub mod state;
 
-pub use error::*;
 pub use instructions::*;
 pub use state::*;
 
 declare_id!("6KiV2x1SxqtPALq9gdyxFXZiuWmwFRdsxMNpnyyPThg3");
 
 /// Computation definition offset for deposit circuit
-const COMP_DEF_OFFSET_COMPUTE_DEPOSIT: u32 = comp_def_offset("compute_deposit");
+pub const COMP_DEF_OFFSET_COMPUTE_DEPOSIT: u32 = comp_def_offset("compute_deposit");
 
 #[arcium_program]
 pub mod shadowlend_program {

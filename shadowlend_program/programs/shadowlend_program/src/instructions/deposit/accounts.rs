@@ -3,13 +3,12 @@ use arcium_anchor::prelude::*;
 
 // Import ID and SignerAccount from crate root
 use crate::{SignerAccount, ID};
+// Import State
+use crate::state::{Pool, UserObligation};
 // Import ID_CONST from arcium_client for PDA derivation macros
 use arcium_client::idl::arcium::ID_CONST;
 
 use crate::error::ErrorCode;
-
-/// Computation definition offset for deposit circuit
-const COMP_DEF_OFFSET_COMPUTE_DEPOSIT: u32 = comp_def_offset("compute_deposit");
 
 /// Accounts for the deposit instruction
 ///
@@ -23,6 +22,23 @@ pub struct Deposit<'info> {
     /// The user depositing collateral (pays for computation)
     #[account(mut)]
     pub payer: Signer<'info>,
+
+    /// The lending pool
+    #[account(
+        seeds = [Pool::SEED_PREFIX, pool.collateral_mint.as_ref()],
+        bump = pool.bump
+    )]
+    pub pool: Box<Account<'info, Pool>>,
+
+    /// User's obligation account (holds encrypted state)
+    #[account(
+        init_if_needed,
+        payer = payer,
+        space = 8 + UserObligation::INIT_SPACE,
+        seeds = [UserObligation::SEED_PREFIX, payer.key().as_ref(), pool.key().as_ref()],
+        bump
+    )]
+    pub user_obligation: Box<Account<'info, UserObligation>>,
 
     // === Arcium MXE Accounts ===
     /// Signer PDA for Arcium callbacks
@@ -56,7 +72,7 @@ pub struct Deposit<'info> {
     pub computation_account: UncheckedAccount<'info>,
 
     /// Computation definition for deposit circuit
-    #[account(address = derive_comp_def_pda!(COMP_DEF_OFFSET_COMPUTE_DEPOSIT))]
+    #[account(address = derive_comp_def_pda!(crate::COMP_DEF_OFFSET_COMPUTE_DEPOSIT))]
     pub comp_def_account: Box<Account<'info, ComputationDefinitionAccount>>,
 
     /// Arcium cluster account

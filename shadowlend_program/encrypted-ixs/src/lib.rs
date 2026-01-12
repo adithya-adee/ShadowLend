@@ -34,13 +34,6 @@ mod circuits {
     // Deposit Circuit
     // ============================================================
 
-    /// Input for deposit computation
-    /// User provides amount, MXE provides current state
-    pub struct DepositInput {
-        /// Amount of collateral to deposit (from user, Enc<Shared>)
-        pub amount: u128,
-    }
-
     /// Output from deposit computation
     /// Returns new encrypted state and public delta
     pub struct DepositOutput {

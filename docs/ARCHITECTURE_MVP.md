@@ -12,7 +12,42 @@ ShadowLend V1 is a privacy-preserving lending protocol built on Solana using **A
 
 ---
 
-## 1. Core Architecture
+## 1. Tech Stack
+
+| Layer         | Technology                   | Purpose                                      |
+| ------------- | ---------------------------- | -------------------------------------------- |
+| **Blockchain**| Solana                       | High-throughput L1 for smart contracts       |
+| **Smart Contracts** | Anchor Framework (Rust) | Solana program development                   |
+| **Privacy Layer** | Arcium MXE                | Confidential computation in TEE environment  |
+| **Frontend**  | Next.js + React              | Web application UI                           |
+| **Styling**   | TailwindCSS                  | Modern responsive design                     |
+| **Wallet**    | Solana Wallet Adapter        | Multi-wallet integration                    |
+| **Indexer**   | Helius / Custom Indexer      | Transaction history & event tracking         |
+| **Oracle**    | Pyth Network                 | Real-time price feeds (SOL, USDC)            |
+| **State Mgmt**| Zustand / React Query        | Client-side state management & caching       |
+| **TypeScript**| TypeScript                   | Type-safe frontend development               |
+
+### Key Dependencies
+
+```toml
+# Anchor Program (Cargo.toml)
+anchor-lang = "0.30.x"
+anchor-spl = "0.30.x"
+solana-program = "2.x"
+```
+
+```json
+// Frontend (package.json)
+"@solana/kit": "^2.0.x",
+"@coral-xyz/anchor": "^0.30.x",
+"@solana/wallet-adapter-react": "^0.15.x",
+"next": "^14.x",
+"react": "^18.x"
+```
+
+---
+
+## 2. Core Architecture
 
 ### Three-Layer Design
 
@@ -32,7 +67,7 @@ graph TB
 
 ---
 
-## 2. Account Structures & PDAs
+## 3. Account Structures & PDAs
 
 ### Pool Account
 
@@ -117,7 +152,7 @@ struct MxeNodeInfo {
 
 ---
 
-## 3. Core Operations
+## 4. Core Operations
 
 ### A. Deposit
 
@@ -256,7 +291,7 @@ sequenceDiagram
 
 ---
 
-## 4. Security Model
+## 5. Security Model
 
 ### Attestation Verification
 
@@ -288,7 +323,58 @@ Solana verifies:
 
 ---
 
-## 5. Cost Analysis
+## 6. Indexer (Transaction History Tracking)
+
+The Indexer tracks all protocol events and provides queryable transaction history while preserving privacy.
+
+### Architecture
+
+```mermaid
+graph LR
+    Solana[Solana RPC] -->|WebSocket| Indexer[Indexer Service]
+    Indexer -->|Parse Events| Parser[Event Parser]
+    Parser -->|Store| DB[(PostgreSQL)]
+    DB -->|Query| API[REST API]
+    API -->|Fetch| Frontend[Frontend App]
+```
+
+### Indexed Events
+
+| Event Type       | Data Stored (Public)                         | Privacy                        |
+| ---------------- | -------------------------------------------- | ------------------------------ |
+| `DepositExecuted`| Pool ID, Timestamp, Public aggregate delta   | Individual amount hidden       |
+| `BorrowExecuted` | Pool ID, Timestamp, Public aggregate delta   | Health factor hidden           |
+| `InterestAccrued`| Pool ID, Timestamp, Pool interest increment  | Individual interest hidden     |
+| `Liquidation`    | Pool ID, Liquidator, Amounts, Timestamp      | HF before liquidation hidden   |
+
+### User Dashboard Queries
+
+```typescript
+// Get user's transaction history (returns only public data)
+GET /api/v1/user/{wallet}/transactions
+
+// Get pool statistics
+GET /api/v1/pool/{poolId}/stats
+
+// Get recent liquidations (public events)
+GET /api/v1/liquidations?limit=20
+```
+
+### Implementation Options
+
+1. **Helius Webhooks** (Recommended for MVP)
+   - Real-time transaction webhooks
+   - Pre-built Solana parsing
+   - Free tier: 10,000 requests/day
+
+2. **Custom Indexer** (Post-MVP)
+   - Self-hosted Geyser plugin
+   - Full control over data
+   - Better for high-volume
+
+---
+
+## 7. Cost Analysis
 
 ### One-Time Costs (per user)
 
@@ -298,21 +384,23 @@ Solana verifies:
 
 ### Per-Transaction Costs
 
-| Operation       | Compute Units | Cost       | USD      |
-| --------------- | ------------- | ---------- | -------- |
-| Deposit         | ~51,600 CU    | 0.006 SOL  | $0.0009  |
-| Borrow          | ~51,600 CU    | 0.006 SOL  | $0.0009  |
-| Interest Update | ~500 CU       | 0.0005 SOL | $0.00007 |
-| Liquidation     | ~110,000 CU   | 0.011 SOL  | $0.0016  |
+| Operation       | Compute Units | Base Fee     | Priority Fee (avg) | Total        |
+| --------------- | ------------- | ------------ | ------------------ | ------------ |
+| Deposit         | ~51,600 CU    | 0.000005 SOL | ~0.00005 SOL       | ~0.000055 SOL|
+| Borrow          | ~51,600 CU    | 0.000005 SOL | ~0.00005 SOL       | ~0.000055 SOL|
+| Interest Update | ~500 CU       | 0.000005 SOL | ~0.00001 SOL       | ~0.000015 SOL|
+| Liquidation     | ~110,000 CU   | 0.000005 SOL | ~0.0001 SOL        | ~0.000105 SOL|
+
+> **Note**: Solana base fee is 5,000 lamports (0.000005 SOL). Priority fees vary by network congestion.
 
 ### Scaling (1,000 users)
 
-- **Setup**: 2.84 SOL ($426 one-time)
-- **Monthly ops** (100 tx/user): ~260 SOL (~$39,000)
+- **Setup (rent)**: 2.84 SOL (~$426 one-time)
+- **Monthly ops** (100 tx/user avg): ~5.5 SOL (~$825)
 
 ---
 
-## 6. Interest Rate Model
+## 8. Interest Rate Model
 
 **Linear Utilization Model** (Aave-inspired):
 
@@ -343,7 +431,7 @@ Deposit_APY = Borrow_APY × U × (1 - Reserve_Factor)
 
 ---
 
-## 7. Hackathon Timeline (3 Weeks)
+## 9. Development Timeline (3 Weeks)
 
 ### Week 1: Foundation
 
@@ -366,7 +454,7 @@ Deposit_APY = Borrow_APY × U × (1 - Reserve_Factor)
 
 ---
 
-## 8. Privacy Guarantees
+## 10. Privacy Guarantees
 
 | Data                | Visibility | Mechanism           |
 | ------------------- | ---------- | ------------------- |

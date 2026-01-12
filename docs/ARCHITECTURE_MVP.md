@@ -14,18 +14,33 @@ ShadowLend V1 is a privacy-preserving lending protocol built on Solana using **A
 
 ## 1. Tech Stack
 
-| Layer         | Technology                   | Purpose                                      |
-| ------------- | ---------------------------- | -------------------------------------------- |
-| **Blockchain**| Solana                       | High-throughput L1 for smart contracts       |
-| **Smart Contracts** | Anchor Framework (Rust) | Solana program development                   |
-| **Privacy Layer** | Arcium MXE                | Confidential computation in TEE environment  |
-| **Frontend**  | Next.js + React              | Web application UI                           |
-| **Styling**   | TailwindCSS                  | Modern responsive design                     |
-| **Wallet**    | Solana Wallet Adapter        | Multi-wallet integration                    |
-| **Indexer**   | Helius / Custom Indexer      | Transaction history & event tracking         |
-| **Oracle**    | Pyth Network                 | Real-time price feeds (SOL, USDC)            |
-| **State Mgmt**| Zustand / React Query        | Client-side state management & caching       |
-| **TypeScript**| TypeScript                   | Type-safe frontend development               |
+| Layer              | Technology                   | Purpose                                      |
+| ------------------ | ---------------------------- | -------------------------------------------- |
+| **Blockchain**     | Solana (Devnet/Testnet)      | High-throughput L1 for smart contracts       |
+| **RPC Provider**   | Helius RPC                   | Reliable RPC + DAS API + Webhooks            |
+| **Smart Contracts**| Anchor Framework (Rust)      | Solana program development                   |
+| **Privacy Layer**  | Arcium MXE                   | Confidential computation in TEE environment  |
+| **Frontend**       | Next.js + React              | Web application UI                           |
+| **Styling**        | TailwindCSS                  | Modern responsive design                     |
+| **Wallet**         | Solana Wallet Adapter        | Multi-wallet integration                     |
+| **Indexer**        | Helius Webhooks              | Transaction history & event tracking         |
+| **Oracle**         | Mock Prices (Hackathon)      | Fixed prices for demo; Pyth for production   |
+| **State Mgmt**     | Zustand / React Query        | Client-side state management & caching       |
+
+### Helius RPC Endpoints
+
+```bash
+# Devnet (for development)
+https://devnet.helius-rpc.com/?api-key=YOUR_API_KEY
+
+# Testnet (for testing)
+https://testnet.helius-rpc.com/?api-key=YOUR_API_KEY
+
+# Mainnet (production)
+https://mainnet.helius-rpc.com/?api-key=YOUR_API_KEY
+```
+
+> **ORB Explorer**: Use [orb.helius.dev](https://orb.helius.dev) for visual transaction debugging
 
 ### Key Dependencies
 
@@ -43,6 +58,43 @@ solana-program = "2.x"
 "@solana/wallet-adapter-react": "^0.15.x",
 "next": "^14.x",
 "react": "^18.x"
+```
+
+---
+
+## 1.1 Hackathon Simplifications
+
+> **MVP Focus**: Single pool, fixed rates, demo-ready
+
+| Full Version             | Hackathon MVP                          |
+| ------------------------ | -------------------------------------- |
+| Multi-asset pools        | **Single pool: SOL collateral → USDC** |
+| Dynamic interest rates   | **Fixed 5% APY borrow rate**           |
+| Pyth oracle integration  | **Mock prices (SOL=$150, USDC=$1)**    |
+| Automated interest cron  | **On-demand interest (on borrow/repay)** |
+| Multi-cluster support    | **Devnet only**                        |
+
+### Single Pool Design
+
+```
+┌─────────────────────────────────────┐
+│         SOL/USDC Pool               │
+├─────────────────────────────────────┤
+│  Collateral: SOL                    │
+│  Borrow Asset: USDC                 │
+│  LTV: 80%                           │
+│  Liquidation Threshold: 85%         │
+│  Liquidation Bonus: 5%              │
+│  Fixed Borrow Rate: 5% APY          │
+└─────────────────────────────────────┘
+```
+
+### Mock Oracle Prices
+
+```rust
+// For hackathon demo - hardcoded prices
+const SOL_PRICE_USD: u64 = 150_00;  // $150.00 (2 decimals)
+const USDC_PRICE_USD: u64 = 1_00;   // $1.00 (2 decimals)
 ```
 
 ---

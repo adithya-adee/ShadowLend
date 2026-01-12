@@ -50,12 +50,12 @@ pub mod shadowlend_program {
     /// Queue a deposit computation to Arcium MXE
     ///
     /// User's encrypted deposit amount is processed privately by MXE.
-    /// Only pool aggregates are updated publicly.
+    /// Token transfer happens in the callback AFTER MXE verification.
     pub fn deposit(
         ctx: Context<Deposit>,
         computation_offset: u64,
         encrypted_amount: [u8; 32],
-        encrypted_state: [u8; 32],
+        encrypted_state: [u8; 64],
         pub_key: [u8; 32],
         nonce: u128,
     ) -> Result<()> {
@@ -73,7 +73,9 @@ pub mod shadowlend_program {
     ///
     /// Handles:
     /// - Verifying MXE output signature
-    /// - Emitting encrypted result for user to decrypt
+    /// - Performing token transfer (user -> vault)
+    /// - Updating encrypted state
+    /// - Updating pool aggregates
     #[arcium_callback(encrypted_ix = "compute_deposit")]
     pub fn compute_deposit_callback(
         ctx: Context<ComputeDepositCallback>,

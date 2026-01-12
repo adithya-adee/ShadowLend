@@ -1,0 +1,24 @@
+{
+  "mcpServers": {
+    "solana-docs": {
+      "command": "uvx",
+      "args": [
+        "mcpdoc",
+        "--urls",
+        "arcium=https://docs.arcium.com/llms.txt",
+        "helius=https://www.helius.dev/llms.txt",
+        "zkcompression=https://www.zkcompression.com/llms.txt"
+      ],
+      "env": {},
+      "disabled": false,
+      "autoApprove": []
+    },
+    "solana-mobile": {
+      "command": "npx",
+      "args": ["tsx", "packages/mcp-solana-mobile/src/index.ts"],
+      "env": {},
+      "disabled": false,
+      "autoApprove": ["list_solana_mobile_sections", "search_solana_mobile_docs"]
+    }
+  }
+}

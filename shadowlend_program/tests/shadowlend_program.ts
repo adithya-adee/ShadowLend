@@ -8,7 +8,7 @@ import {
   getArciumEnv,
   getCompDefAccOffset,
   getArciumAccountBaseSeed,
-  getArciumProgAddress,
+  getArciumProgramId,
   uploadCircuit,
   buildFinalizeCompDefTx,
   RescueCipher,
@@ -34,14 +34,11 @@ const CLUSTER_OFFSET: number | null = null;
 /**
  * Gets the cluster account address based on configuration.
  * - If CLUSTER_OFFSET is set: Uses getClusterAccAddress (devnet/testnet)
- * - If null: Uses getArciumEnv().arciumClusterPubkey (localnet)
+ * - If null: Uses getArciumEnv().arciumClusterOffset (localnet)
  */
 function getClusterAccount(): PublicKey {
-  if (CLUSTER_OFFSET !== null) {
-    return getClusterAccAddress(CLUSTER_OFFSET);
-  } else {
-    return getArciumEnv().arciumClusterPubkey;
-  }
+  const offset = CLUSTER_OFFSET ?? getArciumEnv().arciumClusterOffset;
+  return getClusterAccAddress(offset);
 }
 
 describe("ShadowlendProgram", () => {
@@ -53,7 +50,7 @@ describe("ShadowlendProgram", () => {
 
   type Event = anchor.IdlEvents<(typeof program)["idl"]>;
   const awaitEvent = async <E extends keyof Event>(
-    eventName: E
+    eventName: E,
   ): Promise<Event[E]> => {
     let listenerId: number;
     const event = await new Promise<Event[E]>((res) => {
@@ -66,6 +63,7 @@ describe("ShadowlendProgram", () => {
     return event;
   };
 
+  const arciumEnv = getArciumEnv();
   const clusterAccount = getClusterAccount();
 
   it("Is initialized!", async () => {
@@ -76,16 +74,16 @@ describe("ShadowlendProgram", () => {
       program,
       owner,
       false,
-      false
+      false,
     );
     console.log(
       "Add together computation definition initialized with signature",
-      initATSig
+      initATSig,
     );
 
     const mxePublicKey = await getMXEPublicKeyWithRetry(
       provider as anchor.AnchorProvider,
-      program.programId
+      program.programId,
     );
 
     console.log("MXE x25519 pubkey is", mxePublicKey);
@@ -112,20 +110,22 @@ describe("ShadowlendProgram", () => {
         Array.from(ciphertext[0]),
         Array.from(ciphertext[1]),
         Array.from(publicKey),
-        new anchor.BN(deserializeLE(nonce).toString())
+        new anchor.BN(deserializeLE(nonce).toString()),
       )
       .accountsPartial({
         computationAccount: getComputationAccAddress(
-          program.programId,
-          computationOffset
+          arciumEnv.arciumClusterOffset,
+          computationOffset,
         ),
         clusterAccount,
         mxeAccount: getMXEAccAddress(program.programId),
-        mempoolAccount: getMempoolAccAddress(program.programId),
-        executingPool: getExecutingPoolAccAddress(program.programId),
+        mempoolAccount: getMempoolAccAddress(arciumEnv.arciumClusterOffset),
+        executingPool: getExecutingPoolAccAddress(
+          arciumEnv.arciumClusterOffset,
+        ),
         compDefAccount: getCompDefAccAddress(
           program.programId,
-          Buffer.from(getCompDefAccOffset("add_together")).readUInt32LE()
+          Buffer.from(getCompDefAccOffset("add_together")).readUInt32LE(),
         ),
       })
       .rpc({ skipPreflight: true, commitment: "confirmed" });
@@ -135,7 +135,7 @@ describe("ShadowlendProgram", () => {
       provider as anchor.AnchorProvider,
       computationOffset,
       program.programId,
-      "confirmed"
+      "confirmed",
     );
     console.log("Finalize sig is ", finalizeSig);
 
@@ -148,16 +148,16 @@ describe("ShadowlendProgram", () => {
     program: Program<ShadowlendProgram>,
     owner: anchor.web3.Keypair,
     uploadRawCircuit: boolean,
-    offchainSource: boolean
+    offchainSource: boolean,
   ): Promise<string> {
     const baseSeedCompDefAcc = getArciumAccountBaseSeed(
-      "ComputationDefinitionAccount"
+      "ComputationDefinitionAccount",
     );
     const offset = getCompDefAccOffset("add_together");
 
     const compDefPDA = PublicKey.findProgramAddressSync(
       [baseSeedCompDefAcc, program.programId.toBuffer(), offset],
-      getArciumProgAddress()
+      getArciumProgramId(),
     )[0];
 
     console.log("Comp def pda is ", compDefPDA);
@@ -183,13 +183,13 @@ describe("ShadowlendProgram", () => {
         "add_together",
         program.programId,
         rawCircuit,
-        true
+        true,
       );
     } else if (!offchainSource) {
       const finalizeTx = await buildFinalizeCompDefTx(
         provider as anchor.AnchorProvider,
         Buffer.from(offset).readUInt32LE(),
-        program.programId
+        program.programId,
       );
 
       const latestBlockhash = await provider.connection.getLatestBlockhash();
@@ -208,7 +208,7 @@ async function getMXEPublicKeyWithRetry(
   provider: anchor.AnchorProvider,
   programId: PublicKey,
   maxRetries: number = 20,
-  retryDelayMs: number = 500
+  retryDelayMs: number = 500,
 ): Promise<Uint8Array> {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
@@ -222,20 +222,20 @@ async function getMXEPublicKeyWithRetry(
 
     if (attempt < maxRetries) {
       console.log(
-        `Retrying in ${retryDelayMs}ms... (attempt ${attempt}/${maxRetries})`
+        `Retrying in ${retryDelayMs}ms... (attempt ${attempt}/${maxRetries})`,
       );
       await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
     }
   }
 
   throw new Error(
-    `Failed to fetch MXE public key after ${maxRetries} attempts`
+    `Failed to fetch MXE public key after ${maxRetries} attempts`,
   );
 }
 
 function readKpJson(path: string): anchor.web3.Keypair {
   const file = fs.readFileSync(path);
   return anchor.web3.Keypair.fromSecretKey(
-    new Uint8Array(JSON.parse(file.toString()))
+    new Uint8Array(JSON.parse(file.toString())),
   );
 }

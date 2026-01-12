@@ -27,10 +27,10 @@ pub struct InitializePool<'info> {
     pub pool: Box<Account<'info, Pool>>,
 
     /// Collateral token mint (e.g., Wrapped SOL)
-    pub collateral_mint: Account<'info, Mint>,
+    pub collateral_mint: Box<Account<'info, Mint>>,
 
     /// Borrow token mint (e.g., USDC)
-    pub borrow_mint: Account<'info, Mint>,
+    pub borrow_mint: Box<Account<'info, Mint>>,
 
     /// Pool's collateral vault (PDA-owned token account)
     #[account(

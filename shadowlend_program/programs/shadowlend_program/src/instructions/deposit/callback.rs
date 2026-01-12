@@ -50,13 +50,13 @@ pub struct ComputeDepositCallback<'info> {
     pub user_obligation: Box<Account<'info, UserObligation>>,
 
     // === Token Accounts ===
-    pub collateral_mint: Account<'info, Mint>,
+    pub collateral_mint: Box<Account<'info, Mint>>,
 
     #[account(
         mut,
         constraint = user_token_account.mint == collateral_mint.key(),
     )]
-    pub user_token_account: Account<'info, TokenAccount>,
+    pub user_token_account: Box<Account<'info, TokenAccount>>,
 
     #[account(
         mut,
@@ -65,7 +65,7 @@ pub struct ComputeDepositCallback<'info> {
         token::mint = collateral_mint,
         token::authority = pool,
     )]
-    pub collateral_vault: Account<'info, TokenAccount>,
+    pub collateral_vault: Box<Account<'info, TokenAccount>>,
 
     /// CHECK: Verified via user_obligation.user constraint
     #[account(constraint = user.key() == user_obligation.user)]

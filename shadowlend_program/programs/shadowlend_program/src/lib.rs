@@ -51,11 +51,11 @@ pub mod shadowlend_program {
     ///
     /// User's encrypted deposit amount is processed privately by MXE.
     /// Token transfer happens in the callback AFTER MXE verification.
+    /// Encrypted state is read from UserObligation to prevent state injection.
     pub fn deposit(
         ctx: Context<Deposit>,
         computation_offset: u64,
         encrypted_amount: [u8; 32],
-        encrypted_state: [u8; 64],
         pub_key: [u8; 32],
         nonce: u128,
     ) -> Result<()> {
@@ -63,7 +63,6 @@ pub mod shadowlend_program {
             ctx,
             computation_offset,
             encrypted_amount,
-            encrypted_state,
             pub_key,
             nonce,
         )

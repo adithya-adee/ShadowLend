@@ -1,8 +1,8 @@
 use anchor_lang::prelude::*;
 use arcium_anchor::prelude::*;
 
-use crate::{SignerAccount, ID};
 use crate::state::{Pool, UserObligation};
+use crate::{SignerAccount, ID};
 use arcium_client::idl::arcium::ID_CONST;
 
 use crate::error::ErrorCode;

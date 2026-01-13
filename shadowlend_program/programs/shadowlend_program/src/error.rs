@@ -39,4 +39,13 @@ pub enum ErrorCode {
 
     #[msg("Invalid pool configuration")]
     InvalidPoolConfig,
+
+    #[msg("Invalid mint - does not match pool collateral")]
+    InvalidMint,
+
+    #[msg("Invalid computation output from MXE")]
+    InvalidComputationOutput,
+
+    #[msg("Math overflow detected")]
+    MathOverflow,
 }

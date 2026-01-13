@@ -10,10 +10,9 @@ use crate::error::ErrorCode;
 pub fn deposit_handler(
     ctx: Context<Deposit>,
     computation_offset: u64,
-    encrypted_amount: [u8; 32],     // Enc<Shared, u128>
-    encrypted_state: [u8; 64],      // Enc<Mxe, UserState>
-    pub_key: [u8; 32],              // User's x25519 public key
-    nonce: u128,                    // Encryption nonce
+    encrypted_amount: [u8; 32], // Enc<Shared, u128>
+    pub_key: [u8; 32],          // User's x25519 public key
+    nonce: u128,                // Encryption nonce
 ) -> Result<()> {
     require!(
         encrypted_amount != [0u8; 32],
@@ -33,7 +32,19 @@ pub fn deposit_handler(
 
     ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
 
-    // TODO: Use account() method to read encrypted_state from UserObligation. Read docs
+    // V6 FIX: Read encrypted_state from UserObligation (prevent state injection)
+    // On first deposit, use zero state; otherwise use existing encrypted state
+    let encrypted_state = if user_obligation.encrypted_state_blob.is_empty() {
+        // First deposit: initialize with zero state
+        [0u8; 64]
+    } else {
+        // Subsequent deposits: use existing state from on-chain account
+        let mut state_arr = [0u8; 64];
+        let len = user_obligation.encrypted_state_blob.len().min(64);
+        state_arr[..len].copy_from_slice(&user_obligation.encrypted_state_blob[..len]);
+        state_arr
+    };
+
     let args = ArgBuilder::new()
         .x25519_pubkey(pub_key)
         .plaintext_u128(nonce)

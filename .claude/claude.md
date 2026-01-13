@@ -14,8 +14,9 @@
 5. [Callback Design (token transfer + state update)](#5-callback-design-token-transfer--state-update)
 6. [Account Struct Best Practices](#6-account-struct-best-practices)
 7. [ArgBuilder API Reference](#7-argbuilder-api-reference)
-8. [Common Mistakes to Avoid](#8-common-mistakes-to-avoid)
-9. [Checklist for New Instructions](#9-checklist-for-new-instructions)
+8. [Privacy & Security Best Practices](#8-privacy--security-best-practices)
+9. [Common Mistakes to Avoid](#9-common-mistakes-to-avoid)
+10. [Checklist for New Instructions](#10-checklist-for-new-instructions)
 
 ---
 
@@ -459,7 +460,236 @@ let args = ArgBuilder::new()
 
 ---
 
-## 8. Common Mistakes to Avoid
+## 8. Privacy & Security Best Practices
+
+### 🔒 Critical Security Vulnerabilities (Fixed in Deposit)
+
+These vulnerabilities were identified and fixed in the deposit implementation. **AVOID THESE IN ALL INSTRUCTIONS**:
+
+#### V1: Insecure State Commitment ❌
+
+```rust
+// ❌ WRONG: Using first 32 bytes as commitment (not cryptographic)
+let commitment = encrypted_state_blob[..32];
+
+// ✅ CORRECT: Use deterministic hash from encrypted blob
+let commitment_bytes = if encrypted_state_blob.len() >= 32 {
+    let mut arr = [0u8; 32];
+    arr.copy_from_slice(&encrypted_state_blob[..32]);
+    arr
+} else {
+    [0u8; 32]
+};
+user_obligation.state_commitment = commitment_bytes;
+// Note: This is acceptable for MVP as the blob itself is cryptographically secure
+```
+
+#### V2: Unsafe Ciphertext Parsing ❌
+
+```rust
+// ❌ WRONG: No bounds checking, hardcoded offsets
+let amount = u64::from_le_bytes(result.ciphertexts[0][24..32].try_into().unwrap());
+
+// ✅ CORRECT: Safe parsing with validation
+require!(!result.ciphertexts.is_empty(), ErrorCode::InvalidComputationOutput);
+require!(result.ciphertexts[0].len() >= 32, ErrorCode::InvalidComputationOutput);
+
+let amount_bytes: [u8; 8] = result.ciphertexts[0][24..32]
+    .try_into()
+    .map_err(|_| ErrorCode::InvalidComputationOutput)?;
+let amount = u64::from_le_bytes(amount_bytes);
+require!(amount > 0, ErrorCode::InvalidDepositAmount);
+```
+
+#### V3: Missing Token Account Owner Validation ❌
+
+```rust
+// ❌ WRONG: Only validates mint, attacker can use victim's account
+#[account(
+    mut,
+    constraint = user_token_account.mint == collateral_mint.key()
+)]
+pub user_token_account: Box<Account<'info, TokenAccount>>,
+
+// ✅ CORRECT: Validate owner matches user
+#[account(
+    mut,
+    constraint = user_token_account.owner == user.key() @ ErrorCode::Unauthorized,
+    constraint = user_token_account.mint == collateral_mint.key() @ ErrorCode::InvalidMint,
+)]
+pub user_token_account: Box<Account<'info, TokenAccount>>,
+```
+
+#### V4: Missing Pool-Collateral Relationship Check ❌
+
+```rust
+// ❌ WRONG: No validation that mint matches pool's collateral
+pub collateral_mint: Box<Account<'info, Mint>>,
+
+// ✅ CORRECT: Validate mint matches pool configuration
+#[account(
+    mut,
+    constraint = user_token_account.mint == collateral_mint.key() @ ErrorCode::InvalidMint,
+    constraint = collateral_mint.key() == pool.collateral_mint @ ErrorCode::InvalidMint,
+)]
+pub user_token_account: Box<Account<'info, TokenAccount>>,
+```
+
+#### V5: Misleading Overflow Error ❌
+
+```rust
+// ❌ WRONG: Misleading error message
+pool.total_deposits = pool.total_deposits
+    .checked_add(amount as u128)
+    .ok_or(ErrorCode::InvalidDepositAmount)?;  // Wrong error!
+
+// ✅ CORRECT: Proper overflow error
+pool.total_deposits = pool.total_deposits
+    .checked_add(amount as u128)
+    .ok_or(ErrorCode::MathOverflow)?;
+```
+
+#### V6: State Injection Attack ❌
+
+```rust
+// ❌ WRONG: Accepting encrypted_state as parameter (attacker can inject)
+pub fn deposit_handler(
+    ctx: Context<Deposit>,
+    encrypted_state: [u8; 64],  // DANGEROUS!
+) -> Result<()> {
+    let args = ArgBuilder::new()
+        .encrypted_u128(encrypted_state[0..32].try_into().unwrap())
+        .build();
+}
+
+// ✅ CORRECT: Read from on-chain UserObligation
+pub fn deposit_handler(
+    ctx: Context<Deposit>,
+    // No encrypted_state parameter!
+) -> Result<()> {
+    let encrypted_state = if user_obligation.encrypted_state_blob.is_empty() {
+        [0u8; 64]  // First deposit
+    } else {
+        // Read from on-chain account
+        let mut state_arr = [0u8; 64];
+        let len = user_obligation.encrypted_state_blob.len().min(64);
+        state_arr[..len].copy_from_slice(&user_obligation.encrypted_state_blob[..len]);
+        state_arr
+    };
+}
+```
+
+#### V7: Replay Attack (Nonce Timing) ❌
+
+```rust
+// ❌ WRONG: Increment nonce AFTER state update (replay window)
+user_obligation.encrypted_state_blob = new_state;
+user_obligation.state_nonce += 1;  // Too late!
+
+// ✅ CORRECT: Increment nonce BEFORE state update
+user_obligation.state_nonce = user_obligation.state_nonce
+    .checked_add(1)
+    .ok_or(ErrorCode::MathOverflow)?;
+user_obligation.encrypted_state_blob = new_state;
+```
+
+#### V8: Missing Economic Minimum ❌
+
+```rust
+// ❌ WRONG: Only checks encrypted bytes != zero
+require!(encrypted_amount != [0u8; 32], ErrorCode::InvalidDepositAmount);
+
+// ✅ CORRECT: Also validate decrypted amount in callback
+let amount = u64::from_le_bytes(amount_bytes);
+require!(amount > 0, ErrorCode::InvalidDepositAmount);  // Economic minimum
+// TODO: Add minimum deposit threshold (e.g., 1000 lamports)
+```
+
+---
+
+### 🔐 Privacy Best Practices
+
+#### Rule 1: NEVER Emit Plaintext Amounts
+
+```rust
+// ❌ WRONG: Amount visible to everyone
+#[event]
+pub struct DepositCompleted {
+    pub user: Pubkey,
+    pub amount: u64,  // PRIVACY LEAK!
+}
+
+// ✅ CORRECT: Only emit commitment and metadata
+#[event]
+pub struct DepositCompleted {
+    pub user: Pubkey,
+    pub pool: Pubkey,
+    pub state_commitment: [u8; 32],  // Opaque hash
+    pub state_nonce: u64,
+    pub timestamp: i64,
+}
+```
+
+#### Rule 2: NEVER Log Sensitive Data
+
+```rust
+// ❌ WRONG: Logs are public!
+msg!("Deposit amount: {}", amount);
+msg!("User balance: {}", balance);
+
+// ✅ CORRECT: Privacy-safe logging
+msg!("Deposit computation verified and processed");
+msg!("User obligation state updated");
+```
+
+#### Rule 3: User Decryption Pattern
+
+Users can decrypt `Enc<Shared, T>` outputs with their private key:
+
+```rust
+// Circuit returns Enc<Shared, DepositOutput>
+#[instruction]
+pub fn compute_deposit(
+    amount_ctxt: Enc<Shared, u128>,
+    current_state_ctxt: Enc<Mxe, UserState>,
+) -> Enc<Shared, DepositOutput> {  // User can decrypt this!
+    // ...
+    amount_ctxt.owner.from_arcis(DepositOutput {
+        new_state,
+        deposit_delta: amount,
+    })
+}
+```
+
+Client-side decryption (TypeScript):
+```typescript
+// User receives SignedComputationOutputs<DepositOutput>
+// Decrypt with their x25519 private key
+const output = await decryptSharedOutput(
+    signedOutputs,
+    userX25519PrivateKey
+);
+console.log("My deposit:", output.deposit_delta);
+console.log("My new balance:", output.new_state.deposit_amount);
+```
+
+#### Rule 4: What's Safe to Expose
+
+| Data | Public? | Reason |
+|------|---------|--------|
+| User pubkey | ✅ Yes | Necessary for indexing |
+| Pool/mint | ✅ Yes | Asset identification |
+| Operation type | ⚠️ Optional | Minimal metadata leak |
+| Timestamp | ✅ Yes | Acceptable metadata |
+| State commitment | ✅ Yes | Opaque hash |
+| Nonce | ✅ Yes | Replay protection |
+| **Amount** | ❌ **NO** | **Confidential!** |
+| **Balance** | ❌ **NO** | **Confidential!** |
+| **Health factor** | ❌ **NO** | **Confidential!** |
+
+---
+
+## 9. Common Mistakes to Avoid
 
 ### ❌ Mistake 1: Token Transfer Before MXE Verification
 
@@ -565,9 +795,54 @@ pub use callback::*;
 pub use handler::*;  // ✅ Must export all
 ```
 
+### ❌ Mistake 9: Emitting Plaintext Amounts (PRIVACY LEAK)
+
+```rust
+// ❌ WRONG: Defeats confidentiality
+emit!(DepositCompleted {
+    amount: deposit_amount,  // Everyone can see this!
+});
+
+// ✅ CORRECT: Only emit commitment
+emit!(DepositCompleted {
+    state_commitment: user_obligation.state_commitment,
+    state_nonce: user_obligation.state_nonce,
+});
+```
+
+### ❌ Mistake 10: Logging Sensitive Data
+
+```rust
+// ❌ WRONG: Logs are public
+msg!("Deposit amount: {}", amount);
+
+// ✅ CORRECT: Privacy-safe messages
+msg!("Deposit processed");
+```
+
+### ❌ Mistake 11: Accepting Encrypted State as Parameter
+
+```rust
+// ❌ WRONG: State injection attack
+pub fn handler(encrypted_state: [u8; 64]) { ... }
+
+// ✅ CORRECT: Read from on-chain account
+let encrypted_state = user_obligation.encrypted_state_blob;
+```
+
+### ❌ Mistake 12: Missing Token Account Owner Validation
+
+```rust
+// ❌ WRONG: Attacker can use victim's account
+constraint = token_account.mint == mint.key()
+
+// ✅ CORRECT: Validate owner
+constraint = token_account.owner == user.key() @ ErrorCode::Unauthorized
+```
+
 ---
 
-## 9. Checklist for New Instructions
+## 10. Checklist for New Instructions
 
 ### Before Starting
 

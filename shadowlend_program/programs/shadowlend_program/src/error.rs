@@ -47,6 +47,9 @@ pub enum ErrorCode {
     #[msg("Invalid mint - does not match pool collateral")]
     InvalidMint,
 
+    #[msg("Repay amount must be greater than zero")]
+    InvalidRepayAmount,
+
     #[msg("Invalid computation output from MXE")]
     InvalidComputationOutput,
 

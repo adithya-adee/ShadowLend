@@ -7,17 +7,17 @@ use crate::state::{Pool, UserObligation};
 use crate::ID;
 use arcium_client::idl::arcium::ID_CONST;
 
-const COMP_DEF_OFFSET_COMPUTE_DEPOSIT: u32 = comp_def_offset("compute_deposit");
+const COMP_DEF_OFFSET_COMPUTE_BORROW: u32 = comp_def_offset("compute_borrow");
 
-/// Callback after MXE computation completes
-/// Performs token transfer AFTER verification
-#[callback_accounts("compute_deposit")]
+/// Callback after MXE borrow computation completes
+/// Performs token transfer (vault -> user) AFTER verification
+#[callback_accounts("compute_borrow")]
 #[derive(Accounts)]
-pub struct ComputeDepositCallback<'info> {
+pub struct ComputeBorrowCallback<'info> {
     // === Arcium Required Accounts ===
     pub arcium_program: Program<'info, Arcium>,
 
-    #[account(address = derive_comp_def_pda!(COMP_DEF_OFFSET_COMPUTE_DEPOSIT))]
+    #[account(address = derive_comp_def_pda!(COMP_DEF_OFFSET_COMPUTE_BORROW))]
     pub comp_def_account: Box<Account<'info, ComputationDefinitionAccount>>,
 
     #[account(address = derive_mxe_pda!())]
@@ -49,24 +49,30 @@ pub struct ComputeDepositCallback<'info> {
     pub user_obligation: Box<Account<'info, UserObligation>>,
 
     // === Token Accounts ===
-    pub collateral_mint: Box<Account<'info, Mint>>,
+    pub borrow_mint: Box<Account<'info, Mint>>,
 
     #[account(
         mut,
-        constraint = user_token_account.owner == user.key() @ ErrorCode::Unauthorized,
-        constraint = user_token_account.mint == collateral_mint.key() @ ErrorCode::InvalidMint,
-        constraint = collateral_mint.key() == pool.collateral_mint @ ErrorCode::InvalidMint,
+        constraint = borrow_mint.key() == pool.borrow_mint @ ErrorCode::InvalidMint,
     )]
-    pub user_token_account: Box<Account<'info, TokenAccount>>,
+    /// CHECK: Validated above
+    pub borrow_mint_check: UncheckedAccount<'info>,
 
     #[account(
         mut,
-        seeds = [b"vault", collateral_mint.key().as_ref(), b"collateral"],
+        seeds = [b"vault", pool.collateral_mint.as_ref(), b"borrow"],
         bump,
-        token::mint = collateral_mint,
+        token::mint = borrow_mint,
         token::authority = pool,
     )]
-    pub collateral_vault: Box<Account<'info, TokenAccount>>,
+    pub borrow_vault: Box<Account<'info, TokenAccount>>,
+
+    #[account(
+        mut,
+        constraint = user_borrow_account.owner == user.key() @ ErrorCode::Unauthorized,
+        constraint = user_borrow_account.mint == borrow_mint.key() @ ErrorCode::InvalidMint,
+    )]
+    pub user_borrow_account: Box<Account<'info, TokenAccount>>,
 
     /// CHECK: Verified via user_obligation.user constraint
     #[account(constraint = user.key() == user_obligation.user)]
@@ -75,62 +81,80 @@ pub struct ComputeDepositCallback<'info> {
     pub token_program: Program<'info, Token>,
 }
 
-/// Process MXE result and transfer tokens
+/// Process MXE borrow result and transfer tokens from vault to user
 /// Uses modern Arcium SDK with auto-deserialized output
-pub fn deposit_callback_handler(
-    ctx: Context<ComputeDepositCallback>,
-    output: SignedComputationOutputs<ComputeDepositOutput>,
+pub fn borrow_callback_handler(
+    ctx: Context<ComputeBorrowCallback>,
+    output: SignedComputationOutputs<ComputeBorrowOutput>,
 ) -> Result<()> {
     // Verify MXE output signature - SDK auto-deserializes
     let result = match output.verify_output(
         &ctx.accounts.cluster_account,
         &ctx.accounts.computation_account,
     ) {
-        Ok(ComputeDepositOutput { field_0 }) => field_0,
+        Ok(ComputeBorrowOutput { field_0 }) => field_0,
         Err(e) => {
             msg!("Computation verification failed: {}", e);
             return Err(ErrorCode::AbortedComputation.into());
         }
     };
 
-    msg!("MXE computation verified");
+    msg!("MXE borrow computation verified");
 
     // Modern Arcium SDK: result is SharedEncryptedStruct<N>
-    // DepositOutput has:
+    // BorrowOutput has:
+    // - approved: bool (revealed = plaintext)
     // - new_state: UserState (4 fields = 4 ciphertexts)
-    // - deposit_delta: u64 (revealed = plaintext, but still in ciphertext array)
+    // - borrow_delta: u64 (revealed = plaintext)
     //
-    // With .reveal(), the deposit_delta becomes a plaintext scalar
-    // It's stored in the ciphertexts array but is actually plaintext
+    // Layout: [approved(1), new_state(4), borrow_delta(1)] = 6 ciphertexts
     require!(
-        !result.ciphertexts.is_empty(),
+        result.ciphertexts.len() >= 6,
         ErrorCode::InvalidComputationOutput
     );
 
-    // deposit_delta is the last field, revealed as plaintext u64
-    // Position: after UserState (4 fields) = index 4
-    let deposit_delta_idx = result.ciphertexts.len() - 1;
-    let deposit_amount = u64::from_le_bytes(
-        result.ciphertexts[deposit_delta_idx][0..8]
+    // Extract approved (first field, revealed bool)
+    let approved = result.ciphertexts[0][0] != 0;
+    require!(approved, ErrorCode::BorrowRejected);
+
+    // Extract borrow_delta (last field, revealed u64)
+    let borrow_delta_idx = result.ciphertexts.len() - 1;
+    let borrow_amount = u64::from_le_bytes(
+        result.ciphertexts[borrow_delta_idx][0..8]
             .try_into()
             .map_err(|_| ErrorCode::InvalidComputationOutput)?
     );
 
-    require!(deposit_amount > 0, ErrorCode::InvalidDepositAmount);
+    require!(borrow_amount > 0, ErrorCode::InvalidBorrowAmount);
 
-    msg!("Deposit amount: {} (revealed)", deposit_amount);
+    msg!("Borrow approved, amount: {} (revealed)", borrow_amount);
 
-    // Transfer tokens from user to vault
+    // Check vault has sufficient liquidity
+    require!(
+        ctx.accounts.borrow_vault.amount >= borrow_amount,
+        ErrorCode::InsufficientLiquidity
+    );
+
+    // Transfer tokens from vault to user (pool PDA signs)
+    let collateral_mint = ctx.accounts.pool.collateral_mint;
+    let seeds = &[
+        Pool::SEED_PREFIX,
+        collateral_mint.as_ref(),
+        &[ctx.accounts.pool.bump],
+    ];
+    let signer_seeds = &[&seeds[..]];
+
     let transfer_accounts = Transfer {
-        from: ctx.accounts.user_token_account.to_account_info(),
-        to: ctx.accounts.collateral_vault.to_account_info(),
-        authority: ctx.accounts.user.to_account_info(),
+        from: ctx.accounts.borrow_vault.to_account_info(),
+        to: ctx.accounts.user_borrow_account.to_account_info(),
+        authority: ctx.accounts.pool.to_account_info(),
     };
-    let transfer_ctx = CpiContext::new(
+    let transfer_ctx = CpiContext::new_with_signer(
         ctx.accounts.token_program.to_account_info(),
         transfer_accounts,
+        signer_seeds,
     );
-    token::transfer(transfer_ctx, deposit_amount)?;
+    token::transfer(transfer_ctx, borrow_amount)?;
 
     msg!("Token transfer completed");
 
@@ -143,15 +167,14 @@ pub fn deposit_callback_handler(
         .checked_add(1)
         .ok_or(ErrorCode::MathOverflow)?;
 
-    // Store the encrypted state (all ciphertexts except the revealed delta)
-    // UserState occupies first 4 ciphertexts
-    let state_ciphertexts: Vec<u8> = result.ciphertexts[..4]
+    // Store the encrypted state (ciphertexts 1-4, which is new_state)
+    let state_ciphertexts: Vec<u8> = result.ciphertexts[1..5]
         .iter()
         .flat_map(|c| c.to_vec())
         .collect();
     user_obligation.encrypted_state_blob = state_ciphertexts;
 
-    // Update state commitment (first 32 bytes)
+    // Update state commitment
     let commitment_bytes = if user_obligation.encrypted_state_blob.len() >= 32 {
         let mut arr = [0u8; 32];
         arr.copy_from_slice(&user_obligation.encrypted_state_blob[..32]);
@@ -167,19 +190,19 @@ pub fn deposit_callback_handler(
 
     // Update pool aggregates
     let pool = &mut ctx.accounts.pool;
-    pool.total_deposits = pool
-        .total_deposits
-        .checked_add(deposit_amount as u128)
+    pool.total_borrows = pool
+        .total_borrows
+        .checked_add(borrow_amount as u128)
         .ok_or(ErrorCode::MathOverflow)?;
     pool.last_update_ts = Clock::get()?.unix_timestamp;
 
     msg!("Pool state updated");
 
-    // Emit event - deposit_amount is public (revealed)
-    emit!(DepositCompleted {
+    // Emit event - borrow_amount is public (revealed)
+    emit!(BorrowCompleted {
         user: user_obligation.user,
         pool: ctx.accounts.pool.key(),
-        amount: deposit_amount,
+        amount: borrow_amount,
         state_nonce: user_obligation.state_nonce,
         timestamp: user_obligation.last_update_ts,
     });
@@ -187,10 +210,10 @@ pub fn deposit_callback_handler(
     Ok(())
 }
 
-/// Deposit completion event
+/// Borrow completion event
 /// Note: amount is public because it's revealed for token transfer
 #[event]
-pub struct DepositCompleted {
+pub struct BorrowCompleted {
     pub user: Pubkey,
     pub pool: Pubkey,
     pub amount: u64,

@@ -13,6 +13,9 @@ declare_id!("6KiV2x1SxqtPALq9gdyxFXZiuWmwFRdsxMNpnyyPThg3");
 /// Computation definition offset for deposit circuit
 pub const COMP_DEF_OFFSET_COMPUTE_DEPOSIT: u32 = comp_def_offset("compute_deposit");
 
+/// Computation definition offset for borrow circuit
+pub const COMP_DEF_OFFSET_COMPUTE_BORROW: u32 = comp_def_offset("compute_borrow");
+
 #[arcium_program]
 pub mod shadowlend_program {
     use super::*;
@@ -43,15 +46,22 @@ pub mod shadowlend_program {
         instructions::admin::init_compute_deposit_comp_def_handler(ctx)
     }
 
+    /// Register the borrow computation definition with Arcium MXE
+    pub fn init_compute_borrow_comp_def(ctx: Context<InitComputeBorrowCompDef>) -> Result<()> {
+        instructions::admin::init_compute_borrow_comp_def_handler(ctx)
+    }
+
     // ============================================================
     // User Instructions - Deposit
     // ============================================================
 
     /// Queue a deposit computation to Arcium MXE
     ///
-    /// User's encrypted deposit amount is processed privately by MXE.
-    /// Token transfer happens in the callback AFTER MXE verification.
-    /// Encrypted state is read from UserObligation to prevent state injection.
+    /// Flow:
+    /// 1. User encrypts deposit amount client-side
+    /// 2. Handler queues computation to MXE
+    /// 3. MXE verifies and returns encrypted output
+    /// 4. Callback extracts deposit_delta and performs transfer
     pub fn deposit(
         ctx: Context<Deposit>,
         computation_offset: u64,
@@ -69,17 +79,47 @@ pub mod shadowlend_program {
     }
 
     /// Callback from Arcium MXE after deposit computation completes
-    ///
-    /// Handles:
-    /// - Verifying MXE output signature
-    /// - Performing token transfer (user -> vault)
-    /// - Updating encrypted state
-    /// - Updating pool aggregates
     #[arcium_callback(encrypted_ix = "compute_deposit")]
     pub fn compute_deposit_callback(
         ctx: Context<ComputeDepositCallback>,
         output: SignedComputationOutputs<ComputeDepositOutput>,
     ) -> Result<()> {
         instructions::deposit::deposit_callback_handler(ctx, output)
+    }
+
+    // ============================================================
+    // User Instructions - Borrow
+    // ============================================================
+
+    /// Queue a borrow computation to Arcium MXE
+    ///
+    /// Flow:
+    /// 1. User encrypts borrow amount client-side
+    /// 2. Handler queues computation with prices and LTV
+    /// 3. MXE computes health factor privately
+    /// 4. Callback checks approval and performs transfer
+    pub fn borrow(
+        ctx: Context<Borrow>,
+        computation_offset: u64,
+        encrypted_amount: [u8; 32],
+        pub_key: [u8; 32],
+        nonce: u128,
+    ) -> Result<()> {
+        instructions::borrow::borrow_handler(
+            ctx,
+            computation_offset,
+            encrypted_amount,
+            pub_key,
+            nonce,
+        )
+    }
+
+    /// Callback from Arcium MXE after borrow computation completes
+    #[arcium_callback(encrypted_ix = "compute_borrow")]
+    pub fn compute_borrow_callback(
+        ctx: Context<ComputeBorrowCallback>,
+        output: SignedComputationOutputs<ComputeBorrowOutput>,
+    ) -> Result<()> {
+        instructions::borrow::borrow_callback_handler(ctx, output)
     }
 }

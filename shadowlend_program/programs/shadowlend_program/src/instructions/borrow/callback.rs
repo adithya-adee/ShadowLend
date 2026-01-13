@@ -174,15 +174,12 @@ pub fn borrow_callback_handler(
         .collect();
     user_obligation.encrypted_state_blob = state_ciphertexts;
 
-    // Update state commitment
-    let commitment_bytes = if user_obligation.encrypted_state_blob.len() >= 32 {
-        let mut arr = [0u8; 32];
-        arr.copy_from_slice(&user_obligation.encrypted_state_blob[..32]);
-        arr
-    } else {
-        [0u8; 32]
-    };
-    user_obligation.state_commitment = commitment_bytes;
+    // Update state commitment using deterministic XOR-fold for integrity protection
+    let mut commitment = [0u8; 32];
+    for (i, byte) in user_obligation.encrypted_state_blob.iter().enumerate() {
+        commitment[i % 32] ^= byte;
+    }
+    user_obligation.state_commitment = commitment;
 
     user_obligation.last_update_ts = Clock::get()?.unix_timestamp;
 

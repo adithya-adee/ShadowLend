@@ -32,19 +32,17 @@ pub fn deposit_handler(
 
     ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
 
-    // V6 FIX: Read encrypted_state from UserObligation (prevent state injection)
-    // On first deposit, use zero state; otherwise use existing encrypted state
-    let encrypted_state = if user_obligation.encrypted_state_blob.is_empty() {
-        // First deposit: initialize with zero state
+    // Read encrypted state from UserObligation (prevent state injection)
+    let encrypted_state: [u8; 64] = if user_obligation.encrypted_state_blob.is_empty() {
         [0u8; 64]
     } else {
-        // Subsequent deposits: use existing state from on-chain account
         let mut state_arr = [0u8; 64];
         let len = user_obligation.encrypted_state_blob.len().min(64);
         state_arr[..len].copy_from_slice(&user_obligation.encrypted_state_blob[..len]);
         state_arr
     };
 
+    // Build args for MXE computation
     let args = ArgBuilder::new()
         .x25519_pubkey(pub_key)
         .plaintext_u128(nonce)

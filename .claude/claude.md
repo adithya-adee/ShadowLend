@@ -79,7 +79,17 @@ encrypted-ixs/src/lib.rs    # Arcis circuits (#[instruction])
 
 ## 3. Circuit Design (encrypted-ixs)
 
-### Template
+### Privacy Model (MVP)
+
+| Data | Privacy | Notes |
+|------|---------|-------|
+| User's aggregate state (deposits, borrows) | **Private** | Encrypted, stored on-chain |
+| Health factor calculation | **Private** | Computed inside MXE |
+| Transaction amounts | **Public** | Revealed for SPL token transfer |
+
+> **Future**: When Arcium releases C-SPL (Confidential SPL), transaction amounts can also be private.
+
+### Template with .reveal()
 
 ```rust
 use arcis_imports::*;
@@ -96,26 +106,31 @@ mod circuits {
         pub last_interest_calc_ts: i64,
     }
 
-    // Output struct
-    pub struct {InstructionName}Output {
-        pub new_state: UserState,
-        pub delta: u128,  // Public delta for aggregates
+    // Output struct - uses u64 for revealed values (for SPL token transfers)
+    pub struct DepositOutput {
+        pub new_state: UserState,       // Encrypted
+        pub deposit_delta: u64,         // REVEALED for token transfer
     }
 
     #[instruction]
-    pub fn compute_{instruction_name}(
+    pub fn compute_deposit(
         amount_ctxt: Enc<Shared, u128>,          // User input (user can decrypt)
         current_state_ctxt: Enc<Mxe, UserState>, // MXE-only state
-    ) -> Enc<Shared, {InstructionName}Output> {  // User can decrypt output
+    ) -> Enc<Shared, DepositOutput> {
         let amount = amount_ctxt.to_arcis();
         let current_state = current_state_ctxt.to_arcis();
 
-        // Business logic here...
-        let new_state = UserState { ... };
+        let new_state = UserState {
+            deposit_amount: current_state.deposit_amount + amount,
+            // ... other fields
+        };
 
-        amount_ctxt.owner.from_arcis({InstructionName}Output {
+        // IMPORTANT: .reveal() makes the value plaintext for on-chain use
+        let revealed_delta = (amount as u64).reveal();
+
+        amount_ctxt.owner.from_arcis(DepositOutput {
             new_state,
-            delta: amount,
+            deposit_delta: revealed_delta,
         })
     }
 }
@@ -127,9 +142,9 @@ mod circuits {
 |------|---------|
 | Use `Enc<Shared, T>` for user inputs | `amount_ctxt: Enc<Shared, u128>` |
 | Use `Enc<Mxe, T>` for internal state | `current_state_ctxt: Enc<Mxe, UserState>` |
+| Use `.reveal()` for values needed on-chain | `amount.reveal()` for token transfers |
 | Use fixed-size types only | `u128`, `i64`, fixed arrays - NO `Vec<T>` |
-| Return `Enc<Shared, Output>` if user needs result | `-> Enc<Shared, DepositOutput>` |
-| Return `Enc<Mxe, T>` if state should stay private | For state-only updates |
+| `.reveal()` makes value PUBLIC | Only use for values that need on-chain access |
 
 ---
 
@@ -262,20 +277,44 @@ pub fn {instruction_name}_callback_handler(
     ctx: Context<Compute{InstructionName}Callback>,
     output: SignedComputationOutputs<Compute{InstructionName}Output>,
 ) -> Result<()> {
-    // 1. Verify MXE output signature
+    // 1. Verify MXE output signature - SDK auto-deserializes
     let result = match output.verify_output(
         &ctx.accounts.cluster_account,
         &ctx.accounts.computation_account,
     ) {
         Ok(Compute{InstructionName}Output { field_0 }) => field_0,
-        Err(e) => return Err(ErrorCode::AbortedComputation.into()),
+        Err(e) => {
+            msg!("Computation verification failed: {}", e);
+            return Err(ErrorCode::AbortedComputation.into());
+        }
     };
 
-    // 2. Extract values from verified result
-    // TODO: Properly deserialize output struct
-    let amount = u64::from_le_bytes(result.ciphertexts[0][24..32].try_into().unwrap());
+    // 2. Modern SDK: Access encrypted result directly
+    // result.ciphertexts: Array of encrypted values (user can decrypt with private key)
+    // result.nonce: u128 for client-side decryption
+    require!(
+        !result.ciphertexts.is_empty(),
+        ErrorCode::InvalidComputationOutput
+    );
 
-    // 3. Perform token transfer
+    // 3. Extract values from verified result
+    // The encrypted output contains the serialized output struct
+    // Position depends on your struct layout (use proper offsets)
+    let encrypted_output = &result.ciphertexts[0];
+    require!(
+        encrypted_output.len() >= expected_size,
+        ErrorCode::InvalidComputationOutput
+    );
+
+    // Example: Extract amount from known offset in output struct
+    let amount_bytes: [u8; 8] = encrypted_output[offset..offset+8]
+        .try_into()
+        .map_err(|_| ErrorCode::InvalidComputationOutput)?;
+    let amount = u64::from_le_bytes(amount_bytes);
+
+    require!(amount > 0, ErrorCode::InvalidAmount);
+
+    // 4. Perform token transfer
     token::transfer(
         CpiContext::new(
             ctx.accounts.token_program.to_account_info(),
@@ -288,17 +327,26 @@ pub fn {instruction_name}_callback_handler(
         amount,
     )?;
 
-    // 4. Update state
+    // 5. Update state - increment nonce BEFORE state update (replay protection)
     let state = &mut ctx.accounts.user_obligation;
+    state.state_nonce = state.state_nonce.checked_add(1).ok_or(ErrorCode::MathOverflow)?;
     state.encrypted_state_blob = result.ciphertexts[0].to_vec();
-    state.state_nonce += 1;
     state.last_update_ts = Clock::get()?.unix_timestamp;
 
-    // 5. Update pool aggregates
-    ctx.accounts.pool.total_deposits += amount as u128;
+    // 6. Update pool aggregates with checked arithmetic
+    ctx.accounts.pool.total_deposits = ctx.accounts.pool.total_deposits
+        .checked_add(amount as u128)
+        .ok_or(ErrorCode::MathOverflow)?;
 
-    // 6. Emit event
-    emit!({InstructionName}Completed { ... });
+    // 7. PRIVACY: Emit event without plaintext amounts
+    // Users decrypt result.ciphertexts with their private key
+    emit!({InstructionName}Completed {
+        user: state.user,
+        pool: ctx.accounts.pool.key(),
+        state_commitment: state.state_commitment,
+        state_nonce: state.state_nonce,
+        timestamp: state.last_update_ts,
+    });
 
     Ok(())
 }

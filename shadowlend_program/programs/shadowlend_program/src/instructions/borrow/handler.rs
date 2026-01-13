@@ -28,7 +28,7 @@ pub fn borrow_handler(
 
     ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
 
-    // Read encrypted state from on-chain UserObligation (prevent state injection)
+    // Read encrypted state from on-chain UserObligation
     let mut encrypted_state = [0u8; 64];
     let len = user_obligation.encrypted_state_blob.len().min(64);
     encrypted_state[..len].copy_from_slice(&user_obligation.encrypted_state_blob[..len]);

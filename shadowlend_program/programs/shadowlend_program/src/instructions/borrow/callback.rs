@@ -2,11 +2,10 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
 use arcium_anchor::prelude::*;
 
-use crate::ID;
-use arcium_client::idl::arcium::ID_CONST;
-
 use crate::error::ErrorCode;
 use crate::state::{Pool, UserObligation};
+use crate::ID;
+use arcium_client::idl::arcium::ID_CONST;
 
 const COMP_DEF_OFFSET_COMPUTE_BORROW: u32 = comp_def_offset("compute_borrow");
 
@@ -54,7 +53,6 @@ pub struct ComputeBorrowCallback<'info> {
 
     #[account(
         mut,
-        // Validate borrow mint matches pool's borrow mint
         constraint = borrow_mint.key() == pool.borrow_mint @ ErrorCode::InvalidMint,
     )]
     /// CHECK: Validated above
@@ -71,9 +69,7 @@ pub struct ComputeBorrowCallback<'info> {
 
     #[account(
         mut,
-        // Validate token account owner matches user
         constraint = user_borrow_account.owner == user.key() @ ErrorCode::Unauthorized,
-        // Validate mint matches pool's borrow mint
         constraint = user_borrow_account.mint == borrow_mint.key() @ ErrorCode::InvalidMint,
     )]
     pub user_borrow_account: Box<Account<'info, TokenAccount>>,
@@ -86,11 +82,12 @@ pub struct ComputeBorrowCallback<'info> {
 }
 
 /// Process MXE borrow result and transfer tokens from vault to user
+/// Uses modern Arcium SDK with auto-deserialized output
 pub fn borrow_callback_handler(
     ctx: Context<ComputeBorrowCallback>,
     output: SignedComputationOutputs<ComputeBorrowOutput>,
 ) -> Result<()> {
-    // Verify MXE output signature
+    // Verify MXE output signature - SDK auto-deserializes
     let result = match output.verify_output(
         &ctx.accounts.cluster_account,
         &ctx.accounts.computation_account,
@@ -104,38 +101,38 @@ pub fn borrow_callback_handler(
 
     msg!("MXE borrow computation verified");
 
-    // Safe ciphertext parsing with bounds checking
+    // Modern Arcium SDK: result is SharedEncryptedStruct<N>
+    // BorrowOutput has:
+    // - approved: bool (revealed = plaintext)
+    // - new_state: UserState (4 fields = 4 ciphertexts)
+    // - borrow_delta: u64 (revealed = plaintext)
+    //
+    // Layout: [approved(1), new_state(4), borrow_delta(1)] = 6 ciphertexts
     require!(
-        !result.ciphertexts.is_empty(),
-        ErrorCode::InvalidComputationOutput
-    );
-    require!(
-        result.ciphertexts[0].len() >= 32,
+        result.ciphertexts.len() >= 6,
         ErrorCode::InvalidComputationOutput
     );
 
-    // Extract approval status from verified MXE output
-    // Note: First byte indicates approval (bool serialized as u8)
+    // Extract approved (first field, revealed bool)
     let approved = result.ciphertexts[0][0] != 0;
-
-    // Check if borrow was approved by MXE (HF >= 1.0)
     require!(approved, ErrorCode::BorrowRejected);
 
-    // Extract borrow amount from verified output
-    let amount_bytes: [u8; 8] = result.ciphertexts[0][24..32]
-        .try_into()
-        .map_err(|_| ErrorCode::InvalidComputationOutput)?;
-    let borrow_amount = u64::from_le_bytes(amount_bytes);
+    // Extract borrow_delta (last field, revealed u64)
+    let borrow_delta_idx = result.ciphertexts.len() - 1;
+    let borrow_amount = u64::from_le_bytes(
+        result.ciphertexts[borrow_delta_idx][0..8]
+            .try_into()
+            .map_err(|_| ErrorCode::InvalidComputationOutput)?
+    );
 
-    // Validate amount is non-zero (economic minimum)
     require!(borrow_amount > 0, ErrorCode::InvalidBorrowAmount);
 
-    msg!("Borrow approved, processing transfer");
+    msg!("Borrow approved, amount: {} (revealed)", borrow_amount);
 
     // Check vault has sufficient liquidity
     require!(
         ctx.accounts.borrow_vault.amount >= borrow_amount,
-        ErrorCode::BorrowRejected
+        ErrorCode::InsufficientLiquidity
     );
 
     // Transfer tokens from vault to user (pool PDA signs)
@@ -164,13 +161,18 @@ pub fn borrow_callback_handler(
     // Update user obligation with new encrypted state
     let user_obligation = &mut ctx.accounts.user_obligation;
 
-    // V7 FIX: Increment nonce BEFORE state update for replay protection
+    // Increment nonce BEFORE state update for replay protection
     user_obligation.state_nonce = user_obligation
         .state_nonce
         .checked_add(1)
         .ok_or(ErrorCode::MathOverflow)?;
 
-    user_obligation.encrypted_state_blob = result.ciphertexts[0].to_vec();
+    // Store the encrypted state (ciphertexts 1-4, which is new_state)
+    let state_ciphertexts: Vec<u8> = result.ciphertexts[1..5]
+        .iter()
+        .flat_map(|c| c.to_vec())
+        .collect();
+    user_obligation.encrypted_state_blob = state_ciphertexts;
 
     // Update state commitment
     let commitment_bytes = if user_obligation.encrypted_state_blob.len() >= 32 {
@@ -186,7 +188,7 @@ pub fn borrow_callback_handler(
 
     msg!("User obligation state updated");
 
-    // Update pool aggregates with proper overflow handling
+    // Update pool aggregates
     let pool = &mut ctx.accounts.pool;
     pool.total_borrows = pool
         .total_borrows
@@ -196,12 +198,11 @@ pub fn borrow_callback_handler(
 
     msg!("Pool state updated");
 
-    // PRIVACY: Emit event without plaintext amount
-    // Users decrypt SignedComputationOutputs with their private key to see details
+    // Emit event - borrow_amount is public (revealed)
     emit!(BorrowCompleted {
         user: user_obligation.user,
         pool: ctx.accounts.pool.key(),
-        state_commitment: user_obligation.state_commitment,
+        amount: borrow_amount,
         state_nonce: user_obligation.state_nonce,
         timestamp: user_obligation.last_update_ts,
     });
@@ -209,14 +210,13 @@ pub fn borrow_callback_handler(
     Ok(())
 }
 
-/// Privacy-safe borrow completion event
-/// Users must decrypt MXE output (Enc<Shared, BorrowOutput>) with their private key
-/// to see transaction amounts. Only commitment and metadata are public.
+/// Borrow completion event
+/// Note: amount is public because it's revealed for token transfer
 #[event]
 pub struct BorrowCompleted {
     pub user: Pubkey,
     pub pool: Pubkey,
-    pub state_commitment: [u8; 32], // Hash of encrypted state
+    pub amount: u64,
     pub state_nonce: u64,
     pub timestamp: i64,
 }

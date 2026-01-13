@@ -2,11 +2,10 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
 use arcium_anchor::prelude::*;
 
-use crate::ID;
-use arcium_client::idl::arcium::ID_CONST;
-
 use crate::error::ErrorCode;
 use crate::state::{Pool, UserObligation};
+use crate::ID;
+use arcium_client::idl::arcium::ID_CONST;
 
 const COMP_DEF_OFFSET_COMPUTE_DEPOSIT: u32 = comp_def_offset("compute_deposit");
 
@@ -54,9 +53,7 @@ pub struct ComputeDepositCallback<'info> {
 
     #[account(
         mut,
-        // V3 FIX: Validate token account owner matches user
         constraint = user_token_account.owner == user.key() @ ErrorCode::Unauthorized,
-        // V4 FIX: Validate mint matches pool's collateral mint
         constraint = user_token_account.mint == collateral_mint.key() @ ErrorCode::InvalidMint,
         constraint = collateral_mint.key() == pool.collateral_mint @ ErrorCode::InvalidMint,
     )]
@@ -79,11 +76,12 @@ pub struct ComputeDepositCallback<'info> {
 }
 
 /// Process MXE result and transfer tokens
+/// Uses modern Arcium SDK with auto-deserialized output
 pub fn deposit_callback_handler(
     ctx: Context<ComputeDepositCallback>,
     output: SignedComputationOutputs<ComputeDepositOutput>,
 ) -> Result<()> {
-    // Verify MXE output signature
+    // Verify MXE output signature - SDK auto-deserializes
     let result = match output.verify_output(
         &ctx.accounts.cluster_account,
         &ctx.accounts.computation_account,
@@ -97,28 +95,30 @@ pub fn deposit_callback_handler(
 
     msg!("MXE computation verified");
 
-    // V2 FIX: Safe ciphertext parsing with bounds checking
-    // TODO: Use proper Arcium SDK deserialization when available
+    // Modern Arcium SDK: result is SharedEncryptedStruct<N>
+    // DepositOutput has:
+    // - new_state: UserState (4 fields = 4 ciphertexts)
+    // - deposit_delta: u64 (revealed = plaintext, but still in ciphertext array)
+    //
+    // With .reveal(), the deposit_delta becomes a plaintext scalar
+    // It's stored in the ciphertexts array but is actually plaintext
     require!(
         !result.ciphertexts.is_empty(),
         ErrorCode::InvalidComputationOutput
     );
-    require!(
-        result.ciphertexts[0].len() >= 32,
-        ErrorCode::InvalidComputationOutput
+
+    // deposit_delta is the last field, revealed as plaintext u64
+    // Position: after UserState (4 fields) = index 4
+    let deposit_delta_idx = result.ciphertexts.len() - 1;
+    let deposit_amount = u64::from_le_bytes(
+        result.ciphertexts[deposit_delta_idx][0..8]
+            .try_into()
+            .map_err(|_| ErrorCode::InvalidComputationOutput)?
     );
-    
-    // Extract deposit amount from verified MXE output
-    // Note: This is a temporary workaround until proper DepositOutput deserialization
-    let amount_bytes: [u8; 8] = result.ciphertexts[0][24..32]
-        .try_into()
-        .map_err(|_| ErrorCode::InvalidComputationOutput)?;
-    let deposit_amount = u64::from_le_bytes(amount_bytes);
-    
-    // Validate amount is non-zero (economic minimum)
+
     require!(deposit_amount > 0, ErrorCode::InvalidDepositAmount);
 
-    msg!("Deposit computation verified and processed");
+    msg!("Deposit amount: {} (revealed)", deposit_amount);
 
     // Transfer tokens from user to vault
     let transfer_accounts = Transfer {
@@ -136,19 +136,22 @@ pub fn deposit_callback_handler(
 
     // Update user obligation with new encrypted state
     let user_obligation = &mut ctx.accounts.user_obligation;
-    
-    // V7 FIX: Increment nonce BEFORE state update for replay protection
+
+    // Increment nonce BEFORE state update for replay protection
     user_obligation.state_nonce = user_obligation
         .state_nonce
         .checked_add(1)
-        .ok_or(ErrorCode::InvalidDepositAmount)?;
-    
-    user_obligation.encrypted_state_blob = result.ciphertexts[0].to_vec();
+        .ok_or(ErrorCode::MathOverflow)?;
 
-    // V1 FIX: Cryptographic commitment using deterministic hash
-    // Note: Using first 32 bytes of encrypted blob as commitment (deterministic)
-    // This is acceptable for MVP as the blob itself is cryptographically secure
-    // TODO: Use SHA256 syscall when available in future Anchor/Solana versions
+    // Store the encrypted state (all ciphertexts except the revealed delta)
+    // UserState occupies first 4 ciphertexts
+    let state_ciphertexts: Vec<u8> = result.ciphertexts[..4]
+        .iter()
+        .flat_map(|c| c.to_vec())
+        .collect();
+    user_obligation.encrypted_state_blob = state_ciphertexts;
+
+    // Update state commitment (first 32 bytes)
     let commitment_bytes = if user_obligation.encrypted_state_blob.len() >= 32 {
         let mut arr = [0u8; 32];
         arr.copy_from_slice(&user_obligation.encrypted_state_blob[..32]);
@@ -162,7 +165,7 @@ pub fn deposit_callback_handler(
 
     msg!("User obligation state updated");
 
-    // V5 FIX: Update pool aggregates with proper overflow handling
+    // Update pool aggregates
     let pool = &mut ctx.accounts.pool;
     pool.total_deposits = pool
         .total_deposits
@@ -172,12 +175,11 @@ pub fn deposit_callback_handler(
 
     msg!("Pool state updated");
 
-    // PRIVACY: Emit event without plaintext amount
-    // Users decrypt SignedComputationOutputs with their private key to see details
+    // Emit event - deposit_amount is public (revealed)
     emit!(DepositCompleted {
         user: user_obligation.user,
         pool: ctx.accounts.pool.key(),
-        state_commitment: user_obligation.state_commitment,
+        amount: deposit_amount,
         state_nonce: user_obligation.state_nonce,
         timestamp: user_obligation.last_update_ts,
     });
@@ -185,14 +187,13 @@ pub fn deposit_callback_handler(
     Ok(())
 }
 
-/// Privacy-safe deposit completion event
-/// Users must decrypt MXE output (Enc<Shared, DepositOutput>) with their private key
-/// to see transaction amounts. Only commitment and metadata are public.
+/// Deposit completion event
+/// Note: amount is public because it's revealed for token transfer
 #[event]
 pub struct DepositCompleted {
     pub user: Pubkey,
     pub pool: Pubkey,
-    pub state_commitment: [u8; 32],  // SHA256 hash of encrypted state
+    pub amount: u64,
     pub state_nonce: u64,
     pub timestamp: i64,
 }

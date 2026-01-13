@@ -57,9 +57,11 @@ pub mod shadowlend_program {
 
     /// Queue a deposit computation to Arcium MXE
     ///
-    /// User's encrypted deposit amount is processed privately by MXE.
-    /// Token transfer happens in the callback AFTER MXE verification.
-    /// Encrypted state is read from UserObligation to prevent state injection.
+    /// Flow:
+    /// 1. User encrypts deposit amount client-side
+    /// 2. Handler queues computation to MXE
+    /// 3. MXE verifies and returns encrypted output
+    /// 4. Callback extracts deposit_delta and performs transfer
     pub fn deposit(
         ctx: Context<Deposit>,
         computation_offset: u64,
@@ -77,12 +79,6 @@ pub mod shadowlend_program {
     }
 
     /// Callback from Arcium MXE after deposit computation completes
-    ///
-    /// Handles:
-    /// - Verifying MXE output signature
-    /// - Performing token transfer (user -> vault)
-    /// - Updating encrypted state
-    /// - Updating pool aggregates
     #[arcium_callback(encrypted_ix = "compute_deposit")]
     pub fn compute_deposit_callback(
         ctx: Context<ComputeDepositCallback>,
@@ -97,9 +93,11 @@ pub mod shadowlend_program {
 
     /// Queue a borrow computation to Arcium MXE
     ///
-    /// User's encrypted borrow amount is processed privately by MXE.
-    /// Health factor is computed privately inside MXE.
-    /// Token transfer (vault -> user) happens in the callback AFTER MXE verification.
+    /// Flow:
+    /// 1. User encrypts borrow amount client-side
+    /// 2. Handler queues computation with prices and LTV
+    /// 3. MXE computes health factor privately
+    /// 4. Callback checks approval and performs transfer
     pub fn borrow(
         ctx: Context<Borrow>,
         computation_offset: u64,
@@ -117,13 +115,6 @@ pub mod shadowlend_program {
     }
 
     /// Callback from Arcium MXE after borrow computation completes
-    ///
-    /// Handles:
-    /// - Verifying MXE output signature
-    /// - Checking if borrow was approved (HF >= 1.0)
-    /// - Performing token transfer (vault -> user)
-    /// - Updating encrypted state
-    /// - Updating pool aggregates
     #[arcium_callback(encrypted_ix = "compute_borrow")]
     pub fn compute_borrow_callback(
         ctx: Context<ComputeBorrowCallback>,
@@ -132,4 +123,3 @@ pub mod shadowlend_program {
         instructions::borrow::borrow_callback_handler(ctx, output)
     }
 }
-

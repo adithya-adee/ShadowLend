@@ -10,11 +10,27 @@ pub use state::*;
 
 declare_id!("6KiV2x1SxqtPALq9gdyxFXZiuWmwFRdsxMNpnyyPThg3");
 
+// ============================================================
+// Computation Definition Offsets for Arcium MXE
+// ============================================================
+
 /// Computation definition offset for deposit circuit
 pub const COMP_DEF_OFFSET_COMPUTE_DEPOSIT: u32 = comp_def_offset("compute_deposit");
 
 /// Computation definition offset for borrow circuit
 pub const COMP_DEF_OFFSET_COMPUTE_BORROW: u32 = comp_def_offset("compute_borrow");
+
+/// Computation definition offset for withdraw circuit
+pub const COMP_DEF_OFFSET_COMPUTE_WITHDRAW: u32 = comp_def_offset("compute_withdraw");
+
+/// Computation definition offset for repay circuit
+pub const COMP_DEF_OFFSET_COMPUTE_REPAY: u32 = comp_def_offset("compute_repay");
+
+/// Computation definition offset for liquidate circuit
+pub const COMP_DEF_OFFSET_COMPUTE_LIQUIDATE: u32 = comp_def_offset("compute_liquidate");
+
+/// Computation definition offset for interest circuit
+pub const COMP_DEF_OFFSET_COMPUTE_INTEREST: u32 = comp_def_offset("compute_interest");
 
 #[arcium_program]
 pub mod shadowlend_program {
@@ -49,6 +65,26 @@ pub mod shadowlend_program {
     /// Register the borrow computation definition with Arcium MXE
     pub fn init_compute_borrow_comp_def(ctx: Context<InitComputeBorrowCompDef>) -> Result<()> {
         instructions::admin::init_compute_borrow_comp_def_handler(ctx)
+    }
+
+    /// Register the withdraw computation definition with Arcium MXE
+    pub fn init_compute_withdraw_comp_def(ctx: Context<InitComputeWithdrawCompDef>) -> Result<()> {
+        instructions::admin::init_compute_withdraw_comp_def_handler(ctx)
+    }
+
+    /// Register the repay computation definition with Arcium MXE
+    pub fn init_compute_repay_comp_def(ctx: Context<InitComputeRepayCompDef>) -> Result<()> {
+        instructions::admin::init_compute_repay_comp_def_handler(ctx)
+    }
+
+    /// Register the liquidate computation definition with Arcium MXE
+    pub fn init_compute_liquidate_comp_def(ctx: Context<InitComputeLiquidateCompDef>) -> Result<()> {
+        instructions::admin::init_compute_liquidate_comp_def_handler(ctx)
+    }
+
+    /// Register the interest computation definition with Arcium MXE
+    pub fn init_compute_interest_comp_def(ctx: Context<InitComputeInterestCompDef>) -> Result<()> {
+        instructions::admin::init_compute_interest_comp_def_handler(ctx)
     }
 
     // ============================================================
@@ -121,5 +157,129 @@ pub mod shadowlend_program {
         output: SignedComputationOutputs<ComputeBorrowOutput>,
     ) -> Result<()> {
         instructions::borrow::borrow_callback_handler(ctx, output)
+    }
+
+    // ============================================================
+    // User Instructions - Withdraw
+    // ============================================================
+
+    /// Queue a withdraw computation to Arcium MXE
+    ///
+    /// Flow:
+    /// 1. User encrypts withdraw amount client-side
+    /// 2. Handler queues computation with prices and LTV
+    /// 3. MXE verifies health factor stays safe after withdrawal
+    /// 4. Callback checks approval and transfers collateral to user
+    pub fn withdraw(
+        ctx: Context<Withdraw>,
+        computation_offset: u64,
+        encrypted_amount: [u8; 32],
+        pub_key: [u8; 32],
+        nonce: u128,
+    ) -> Result<()> {
+        instructions::withdraw::withdraw_handler(
+            ctx,
+            computation_offset,
+            encrypted_amount,
+            pub_key,
+            nonce,
+        )
+    }
+
+    /// Callback from Arcium MXE after withdraw computation completes
+    #[arcium_callback(encrypted_ix = "compute_withdraw")]
+    pub fn compute_withdraw_callback(
+        ctx: Context<ComputeWithdrawCallback>,
+        output: SignedComputationOutputs<ComputeWithdrawOutput>,
+    ) -> Result<()> {
+        instructions::withdraw::withdraw_callback_handler(ctx, output)
+    }
+
+    // ============================================================
+    // User Instructions - Repay
+    // ============================================================
+
+    /// Queue a repay computation to Arcium MXE
+    ///
+    /// Flow:
+    /// 1. User encrypts repay amount client-side
+    /// 2. Handler queues computation
+    /// 3. MXE computes new borrow balance privately
+    /// 4. Callback transfers tokens from user to vault
+    pub fn repay(
+        ctx: Context<Repay>,
+        computation_offset: u64,
+        encrypted_amount: [u8; 32],
+        pub_key: [u8; 32],
+        nonce: u128,
+    ) -> Result<()> {
+        instructions::repay::repay_handler(
+            ctx,
+            computation_offset,
+            encrypted_amount,
+            pub_key,
+            nonce,
+        )
+    }
+
+    /// Callback from Arcium MXE after repay computation completes
+    #[arcium_callback(encrypted_ix = "compute_repay")]
+    pub fn compute_repay_callback(
+        ctx: Context<ComputeRepayCallback>,
+        output: SignedComputationOutputs<ComputeRepayOutput>,
+    ) -> Result<()> {
+        instructions::repay::repay_callback_handler(ctx, output)
+    }
+
+    // ============================================================
+    // Liquidator Instructions
+    // ============================================================
+
+    /// Queue a liquidation computation to Arcium MXE
+    ///
+    /// Flow:
+    /// 1. Liquidator specifies repay amount (plaintext)
+    /// 2. Handler queues computation with prices and liquidation params
+    /// 3. MXE verifies HF < 1.0 privately [CRITICAL]
+    /// 4. Callback transfers debt repayment and seizes collateral + bonus
+    pub fn liquidate(
+        ctx: Context<Liquidate>,
+        computation_offset: u64,
+        repay_amount: u64,
+    ) -> Result<()> {
+        instructions::liquidate::liquidate_handler(ctx, computation_offset, repay_amount)
+    }
+
+    /// Callback from Arcium MXE after liquidation computation completes
+    #[arcium_callback(encrypted_ix = "compute_liquidate")]
+    pub fn compute_liquidate_callback(
+        ctx: Context<ComputeLiquidateCallback>,
+        output: SignedComputationOutputs<ComputeLiquidateOutput>,
+    ) -> Result<()> {
+        instructions::liquidate::liquidate_callback_handler(ctx, output)
+    }
+
+    // ============================================================
+    // Interest Accrual Instructions
+    // ============================================================
+
+    /// Queue an interest update computation to Arcium MXE
+    ///
+    /// Flow:
+    /// 1. Anyone can trigger interest update for any user
+    /// 2. Handler queues computation with current timestamp and rate
+    /// 3. MXE computes accrued interest privately
+    /// 4. Callback updates encrypted state and pool aggregates
+    pub fn update_interest(ctx: Context<UpdateInterest>, computation_offset: u64) -> Result<()> {
+        instructions::interest::update_interest_handler(ctx, computation_offset)
+    }
+
+    /// Callback from Arcium MXE after interest computation completes
+    #[arcium_callback(encrypted_ix = "compute_interest")]
+    pub fn compute_interest_callback(
+        ctx: Context<ComputeInterestCallback>,
+        output: SignedComputationOutputs<ComputeInterestOutput>,
+    ) -> Result<()> {
+        instructions::interest::update_interest_callback_handler(ctx, output)
     }
 }

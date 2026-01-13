@@ -13,6 +13,9 @@ declare_id!("6KiV2x1SxqtPALq9gdyxFXZiuWmwFRdsxMNpnyyPThg3");
 /// Computation definition offset for deposit circuit
 pub const COMP_DEF_OFFSET_COMPUTE_DEPOSIT: u32 = comp_def_offset("compute_deposit");
 
+/// Computation definition offset for borrow circuit
+pub const COMP_DEF_OFFSET_COMPUTE_BORROW: u32 = comp_def_offset("compute_borrow");
+
 #[arcium_program]
 pub mod shadowlend_program {
     use super::*;
@@ -41,6 +44,11 @@ pub mod shadowlend_program {
     /// Register the deposit computation definition with Arcium MXE
     pub fn init_compute_deposit_comp_def(ctx: Context<InitComputeDepositCompDef>) -> Result<()> {
         instructions::admin::init_compute_deposit_comp_def_handler(ctx)
+    }
+
+    /// Register the borrow computation definition with Arcium MXE
+    pub fn init_compute_borrow_comp_def(ctx: Context<InitComputeBorrowCompDef>) -> Result<()> {
+        instructions::admin::init_compute_borrow_comp_def_handler(ctx)
     }
 
     // ============================================================
@@ -82,4 +90,46 @@ pub mod shadowlend_program {
     ) -> Result<()> {
         instructions::deposit::deposit_callback_handler(ctx, output)
     }
+
+    // ============================================================
+    // User Instructions - Borrow
+    // ============================================================
+
+    /// Queue a borrow computation to Arcium MXE
+    ///
+    /// User's encrypted borrow amount is processed privately by MXE.
+    /// Health factor is computed privately inside MXE.
+    /// Token transfer (vault -> user) happens in the callback AFTER MXE verification.
+    pub fn borrow(
+        ctx: Context<Borrow>,
+        computation_offset: u64,
+        encrypted_amount: [u8; 32],
+        pub_key: [u8; 32],
+        nonce: u128,
+    ) -> Result<()> {
+        instructions::borrow::borrow_handler(
+            ctx,
+            computation_offset,
+            encrypted_amount,
+            pub_key,
+            nonce,
+        )
+    }
+
+    /// Callback from Arcium MXE after borrow computation completes
+    ///
+    /// Handles:
+    /// - Verifying MXE output signature
+    /// - Checking if borrow was approved (HF >= 1.0)
+    /// - Performing token transfer (vault -> user)
+    /// - Updating encrypted state
+    /// - Updating pool aggregates
+    #[arcium_callback(encrypted_ix = "compute_borrow")]
+    pub fn compute_borrow_callback(
+        ctx: Context<ComputeBorrowCallback>,
+        output: SignedComputationOutputs<ComputeBorrowOutput>,
+    ) -> Result<()> {
+        instructions::borrow::borrow_callback_handler(ctx, output)
+    }
 }
+

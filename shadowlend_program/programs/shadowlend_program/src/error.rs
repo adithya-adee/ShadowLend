@@ -33,6 +33,10 @@ pub enum ErrorCode {
     #[msg("Position is healthy and cannot be liquidated")]
     PositionHealthy,
 
+    // === Pool Errors ===
+    #[msg("Insufficient liquidity in borrow pool")]
+    InsufficientLiquidity,
+
     // === General Errors ===
     #[msg("Unauthorized - only pool authority can perform this action")]
     Unauthorized,

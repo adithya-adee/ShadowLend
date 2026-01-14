@@ -75,16 +75,18 @@ pub fn initialize_pool_handler(
     pool.collateral_mint = ctx.accounts.collateral_mint.key();
     pool.borrow_mint = ctx.accounts.borrow_mint.key();
 
-    // Initialize aggregates to zero
-    pool.total_deposits = 0;
-    pool.total_borrows = 0;
-    pool.accumulated_interest = 0;
+    // Initialize encrypted pool state to empty (will be populated by first MXE computation)
+    pool.encrypted_pool_state = vec![];
+    pool.pool_state_commitment = [0u8; 32];
 
-    // Set risk parameters
+    // Set risk parameters (remain public for transparency)
     pool.ltv = ltv;
     pool.liquidation_threshold = liquidation_threshold;
     pool.liquidation_bonus = liquidation_bonus;
     pool.fixed_borrow_rate = fixed_borrow_rate;
+
+    // Initialize vault tracking
+    pool.vault_nonce = 0;
 
     // Set metadata
     pool.last_update_ts = Clock::get()?.unix_timestamp;

@@ -77,6 +77,8 @@ pub struct ComputeDepositCallback<'info> {
 
 /// Process MXE result and transfer tokens
 /// Uses modern Arcium SDK with auto-deserialized output
+///
+/// CONFIDENTIAL: Amount is extracted but NOT emitted in events
 pub fn deposit_callback_handler(
     ctx: Context<ComputeDepositCallback>,
     output: SignedComputationOutputs<ComputeDepositOutput>,
@@ -95,20 +97,13 @@ pub fn deposit_callback_handler(
 
     msg!("MXE computation verified");
 
-    // Modern Arcium SDK: result is SharedEncryptedStruct<N>
-    // DepositOutput has:
-    // - new_state: UserState (4 fields = 4 ciphertexts)
-    // - deposit_delta: u64 (revealed = plaintext, but still in ciphertext array)
-    //
-    // With .reveal(), the deposit_delta becomes a plaintext scalar
-    // It's stored in the ciphertexts array but is actually plaintext
+    // Extract deposit amount for token transfer
     require!(
         !result.ciphertexts.is_empty(),
         ErrorCode::InvalidComputationOutput
     );
 
     // deposit_delta is the last field, revealed as plaintext u64
-    // Position: after UserState (4 fields) = index 4
     let deposit_delta_idx = result.ciphertexts.len() - 1;
     let deposit_amount = u64::from_le_bytes(
         result.ciphertexts[deposit_delta_idx][0..8]
@@ -118,7 +113,8 @@ pub fn deposit_callback_handler(
 
     require!(deposit_amount > 0, ErrorCode::InvalidDepositAmount);
 
-    msg!("Deposit amount: {} (revealed)", deposit_amount);
+    // NOTE: Amount is NOT logged for confidentiality
+    // msg!("Deposit amount: {} (revealed)", deposit_amount);
 
     // Transfer tokens from user to vault
     let transfer_accounts = Transfer {
@@ -152,32 +148,33 @@ pub fn deposit_callback_handler(
     user_obligation.encrypted_state_blob = state_ciphertexts;
 
     // Update state commitment using deterministic XOR-fold for integrity protection
-    // This creates a 32-byte commitment from the encrypted state
     let mut commitment = [0u8; 32];
     for (i, byte) in user_obligation.encrypted_state_blob.iter().enumerate() {
         commitment[i % 32] ^= byte;
     }
     user_obligation.state_commitment = commitment;
 
+    // Update funding tracker (visible - used for two-phase model)
+    user_obligation.total_funded = user_obligation
+        .total_funded
+        .checked_add(deposit_amount)
+        .ok_or(ErrorCode::MathOverflow)?;
+
     user_obligation.last_update_ts = Clock::get()?.unix_timestamp;
 
     msg!("User obligation state updated");
 
-    // Update pool aggregates
+    // Update pool timestamp only (aggregates are now encrypted in MXE)
     let pool = &mut ctx.accounts.pool;
-    pool.total_deposits = pool
-        .total_deposits
-        .checked_add(deposit_amount as u128)
-        .ok_or(ErrorCode::MathOverflow)?;
     pool.last_update_ts = Clock::get()?.unix_timestamp;
 
     msg!("Pool state updated");
 
-    // Emit event - deposit_amount is public (revealed)
+    // Emit CONFIDENTIAL event - NO amount field!
     emit!(DepositCompleted {
         user: user_obligation.user,
         pool: ctx.accounts.pool.key(),
-        amount: deposit_amount,
+        // NO amount field for confidentiality
         state_nonce: user_obligation.state_nonce,
         timestamp: user_obligation.last_update_ts,
     });
@@ -186,12 +183,12 @@ pub fn deposit_callback_handler(
 }
 
 /// Deposit completion event
-/// Note: amount is public because it's revealed for token transfer
+/// CONFIDENTIAL: No amount field - only success indication
 #[event]
 pub struct DepositCompleted {
     pub user: Pubkey,
     pub pool: Pubkey,
-    pub amount: u64,
-    pub state_nonce: u64,
+    // NO amount field for confidentiality
+    pub state_nonce: u128,
     pub timestamp: i64,
 }

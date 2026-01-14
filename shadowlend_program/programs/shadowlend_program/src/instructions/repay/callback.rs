@@ -76,16 +76,12 @@ pub struct ComputeRepayCallback<'info> {
 }
 
 /// Process MXE repay result and transfer tokens from user to vault
-/// Uses modern Arcium SDK with auto-deserialized output
-///
-/// RepayOutput layout:
-/// - new_state: UserState (4 fields encrypted)
-/// - repay_delta: u64 (revealed) - Amount repaid
+/// CONFIDENTIAL: Amount is extracted for transfer but NOT emitted in events
 pub fn repay_callback_handler(
     ctx: Context<ComputeRepayCallback>,
     output: SignedComputationOutputs<ComputeRepayOutput>,
 ) -> Result<()> {
-    // Verify MXE output signature - SDK auto-deserializes
+    // Verify MXE output signature
     let result = match output.verify_output(
         &ctx.accounts.cluster_account,
         &ctx.accounts.computation_account,
@@ -99,8 +95,6 @@ pub fn repay_callback_handler(
 
     msg!("MXE repay computation verified");
 
-    // Validate result structure
-    // RepayOutput: [new_state(4), repay_delta(1)] = 5 ciphertexts
     require!(
         !result.ciphertexts.is_empty(),
         ErrorCode::InvalidComputationOutput
@@ -114,9 +108,9 @@ pub fn repay_callback_handler(
             .map_err(|_| ErrorCode::InvalidComputationOutput)?
     );
 
-    require!(repay_amount > 0, ErrorCode::InvalidBorrowAmount);
+    require!(repay_amount > 0, ErrorCode::InvalidRepayAmount);
 
-    msg!("Repay amount: {} (revealed)", repay_amount);
+    // NOTE: Amount is NOT logged for confidentiality
 
     // Transfer tokens from user to vault
     let transfer_accounts = Transfer {
@@ -135,20 +129,17 @@ pub fn repay_callback_handler(
     // Update user obligation with new encrypted state
     let user_obligation = &mut ctx.accounts.user_obligation;
 
-    // Increment nonce BEFORE state update for replay protection
     user_obligation.state_nonce = user_obligation
         .state_nonce
         .checked_add(1)
         .ok_or(ErrorCode::MathOverflow)?;
 
-    // Store the encrypted state (first 4 ciphertexts = new_state)
     let state_ciphertexts: Vec<u8> = result.ciphertexts[..4]
         .iter()
         .flat_map(|c| c.to_vec())
         .collect();
     user_obligation.encrypted_state_blob = state_ciphertexts;
 
-    // Update state commitment using deterministic XOR-fold for integrity protection
     let mut commitment = [0u8; 32];
     for (i, byte) in user_obligation.encrypted_state_blob.iter().enumerate() {
         commitment[i % 32] ^= byte;
@@ -159,21 +150,17 @@ pub fn repay_callback_handler(
 
     msg!("User obligation state updated");
 
-    // Update pool aggregates (decrease total borrows)
+    // Update pool timestamp only (aggregates now encrypted in MXE)
     let pool = &mut ctx.accounts.pool;
-    pool.total_borrows = pool
-        .total_borrows
-        .checked_sub(repay_amount as u128)
-        .ok_or(ErrorCode::MathOverflow)?;
     pool.last_update_ts = Clock::get()?.unix_timestamp;
 
     msg!("Pool state updated");
 
-    // Emit event - repay_amount is public (revealed for token transfer)
+    // Emit CONFIDENTIAL event - NO amount field
     emit!(RepayCompleted {
         user: user_obligation.user,
         pool: ctx.accounts.pool.key(),
-        amount: repay_amount,
+        success: true,
         state_nonce: user_obligation.state_nonce,
         timestamp: user_obligation.last_update_ts,
     });
@@ -182,12 +169,12 @@ pub fn repay_callback_handler(
 }
 
 /// Repay completion event
-/// Note: amount is public because it's revealed for token transfer
+/// CONFIDENTIAL: No amount field
 #[event]
 pub struct RepayCompleted {
     pub user: Pubkey,
     pub pool: Pubkey,
-    pub amount: u64,
-    pub state_nonce: u64,
+    pub success: bool,
+    pub state_nonce: u128,
     pub timestamp: i64,
 }

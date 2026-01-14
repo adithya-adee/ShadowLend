@@ -76,17 +76,12 @@ pub struct ComputeWithdrawCallback<'info> {
 }
 
 /// Process MXE withdraw result and transfer tokens from vault to user
-/// Uses modern Arcium SDK with auto-deserialized output
-///
-/// WithdrawOutput layout:
-/// - approved: bool (revealed) - Whether withdrawal is safe
-/// - new_state: UserState (4 fields encrypted)
-/// - withdraw_delta: u64 (revealed) - Amount to withdraw
+/// CONFIDENTIAL: Amount extracted for transfer but NOT emitted in events
 pub fn withdraw_callback_handler(
     ctx: Context<ComputeWithdrawCallback>,
     output: SignedComputationOutputs<ComputeWithdrawOutput>,
 ) -> Result<()> {
-    // Verify MXE output signature - SDK auto-deserializes
+    // Verify MXE output signature
     let result = match output.verify_output(
         &ctx.accounts.cluster_account,
         &ctx.accounts.computation_account,
@@ -100,8 +95,6 @@ pub fn withdraw_callback_handler(
 
     msg!("MXE withdraw computation verified");
 
-    // Validate result structure
-    // WithdrawOutput: [approved(1), new_state(4), withdraw_delta(1)] = 6 ciphertexts
     require!(
         result.ciphertexts.len() >= 6,
         ErrorCode::InvalidComputationOutput
@@ -121,7 +114,7 @@ pub fn withdraw_callback_handler(
 
     require!(withdraw_amount > 0, ErrorCode::InvalidWithdrawAmount);
 
-    msg!("Withdraw approved, amount: {} (revealed)", withdraw_amount);
+    // NOTE: Amount is NOT logged for confidentiality
 
     // Check vault has sufficient balance
     require!(
@@ -155,45 +148,44 @@ pub fn withdraw_callback_handler(
     // Update user obligation with new encrypted state
     let user_obligation = &mut ctx.accounts.user_obligation;
 
-    // Increment nonce BEFORE state update for replay protection
     user_obligation.state_nonce = user_obligation
         .state_nonce
         .checked_add(1)
         .ok_or(ErrorCode::MathOverflow)?;
 
-    // Store the encrypted state (ciphertexts 1-4, which is new_state)
     let state_ciphertexts: Vec<u8> = result.ciphertexts[1..5]
         .iter()
         .flat_map(|c| c.to_vec())
         .collect();
     user_obligation.encrypted_state_blob = state_ciphertexts;
 
-    // Update state commitment using deterministic XOR-fold for integrity protection
     let mut commitment = [0u8; 32];
     for (i, byte) in user_obligation.encrypted_state_blob.iter().enumerate() {
         commitment[i % 32] ^= byte;
     }
     user_obligation.state_commitment = commitment;
 
+    // Update claimed tracker
+    user_obligation.total_claimed = user_obligation
+        .total_claimed
+        .checked_add(withdraw_amount)
+        .ok_or(ErrorCode::MathOverflow)?;
+
     user_obligation.last_update_ts = Clock::get()?.unix_timestamp;
 
     msg!("User obligation state updated");
 
-    // Update pool aggregates (decrease total deposits)
+    // Update pool timestamp only (aggregates now encrypted in MXE)
     let pool = &mut ctx.accounts.pool;
-    pool.total_deposits = pool
-        .total_deposits
-        .checked_sub(withdraw_amount as u128)
-        .ok_or(ErrorCode::MathOverflow)?;
     pool.last_update_ts = Clock::get()?.unix_timestamp;
 
     msg!("Pool state updated");
 
-    // Emit event - withdraw_amount is public (revealed for token transfer)
+    // Emit CONFIDENTIAL event - NO amount field
     emit!(WithdrawCompleted {
         user: user_obligation.user,
         pool: ctx.accounts.pool.key(),
-        amount: withdraw_amount,
+        approved: true,
         state_nonce: user_obligation.state_nonce,
         timestamp: user_obligation.last_update_ts,
     });
@@ -202,12 +194,12 @@ pub fn withdraw_callback_handler(
 }
 
 /// Withdraw completion event
-/// Note: amount is public because it's revealed for token transfer
+/// CONFIDENTIAL: No amount field
 #[event]
 pub struct WithdrawCompleted {
     pub user: Pubkey,
     pub pool: Pubkey,
-    pub amount: u64,
-    pub state_nonce: u64,
+    pub approved: bool,
+    pub state_nonce: u128,
     pub timestamp: i64,
 }

@@ -49,10 +49,7 @@ pub struct ComputeInterestCallback<'info> {
 }
 
 /// Process MXE interest result and update state
-///
-/// InterestOutput layout:
-/// - new_state: UserState (4 fields encrypted)
-/// - interest_accrued: u64 (revealed) - For pool aggregate update
+/// CONFIDENTIAL: Interest amount NOT revealed in events
 pub fn update_interest_callback_handler(
     ctx: Context<ComputeInterestCallback>,
     output: SignedComputationOutputs<ComputeInterestOutput>,
@@ -71,39 +68,28 @@ pub fn update_interest_callback_handler(
 
     msg!("MXE interest computation verified");
 
-    // InterestOutput: [new_state(4), interest_accrued(1)] = 5 ciphertexts
     require!(
         !result.ciphertexts.is_empty(),
         ErrorCode::InvalidComputationOutput
     );
 
-    // Extract interest_accrued (last field, revealed u64)
-    let interest_idx = result.ciphertexts.len() - 1;
-    let interest_accrued = u64::from_le_bytes(
-        result.ciphertexts[interest_idx][0..8]
-            .try_into()
-            .map_err(|_| ErrorCode::InvalidComputationOutput)?
-    );
-
-    msg!("Interest accrued: {} (revealed)", interest_accrued);
+    // NOTE: Interest amount NOT extracted for confidentiality
+    // Pool accumulated_interest is now tracked inside encrypted_pool_state
 
     // Update user obligation with new encrypted state
     let user_obligation = &mut ctx.accounts.user_obligation;
 
-    // Increment nonce for replay protection
     user_obligation.state_nonce = user_obligation
         .state_nonce
         .checked_add(1)
         .ok_or(ErrorCode::MathOverflow)?;
 
-    // Store the encrypted state (first 4 ciphertexts)
     let state_ciphertexts: Vec<u8> = result.ciphertexts[..4]
         .iter()
         .flat_map(|c| c.to_vec())
         .collect();
     user_obligation.encrypted_state_blob = state_ciphertexts;
 
-    // Update state commitment using deterministic XOR-fold for integrity protection
     let mut commitment = [0u8; 32];
     for (i, byte) in user_obligation.encrypted_state_blob.iter().enumerate() {
         commitment[i % 32] ^= byte;
@@ -113,20 +99,17 @@ pub fn update_interest_callback_handler(
 
     msg!("User obligation state updated");
 
-    // Update pool aggregates
+    // Update pool timestamp only (interest now tracked in encrypted pool state)
     let pool = &mut ctx.accounts.pool;
-    pool.accumulated_interest = pool
-        .accumulated_interest
-        .checked_add(interest_accrued as u128)
-        .ok_or(ErrorCode::MathOverflow)?;
     pool.last_update_ts = Clock::get()?.unix_timestamp;
 
-    msg!("Pool interest updated");
+    msg!("Pool timestamp updated");
 
+    // Emit CONFIDENTIAL event - NO interest amount
     emit!(InterestUpdated {
         target_user: user_obligation.user,
         pool: ctx.accounts.pool.key(),
-        interest_accrued,
+        // NO interest_accrued field for confidentiality
         state_nonce: user_obligation.state_nonce,
         timestamp: user_obligation.last_update_ts,
     });
@@ -134,11 +117,13 @@ pub fn update_interest_callback_handler(
     Ok(())
 }
 
+/// Interest update event
+/// CONFIDENTIAL: No interest amount field
 #[event]
 pub struct InterestUpdated {
     pub target_user: Pubkey,
     pub pool: Pubkey,
-    pub interest_accrued: u64,
-    pub state_nonce: u64,
+    // NO interest_accrued field for confidentiality
+    pub state_nonce: u128,
     pub timestamp: i64,
 }

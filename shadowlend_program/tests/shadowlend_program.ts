@@ -272,6 +272,17 @@ async function initComputeConfidentialDepositCompDef(
 
   console.log("Compute confidential deposit comp def PDA:", compDefPDA.toString());
 
+  // Check if account already exists
+  try {
+    const accountInfo = await provider.connection.getAccountInfo(compDefPDA);
+    if (accountInfo) {
+      console.log("Compute definition already exists, skipping initialization");
+      return "already_exists";
+    }
+  } catch (e) {
+    // Account doesn't exist, proceed with initialization
+  }
+
   const sig = await program.methods
     .initComputeDepositCompDef()
     .accounts({
@@ -458,9 +469,6 @@ describe("ShadowLend Protocol Tests", () => {
     });
 
     it("should emit PoolInitialized event with correct data", async () => {
-      // Small delay to ensure fresh blockhash
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
       const authority = readKpJson(`${os.homedir()}/.config/solana/id.json`);
 
       // Create fresh test environment
@@ -480,21 +488,42 @@ describe("ShadowLend Protocol Tests", () => {
       });
 
       try {
-        // Initialize pool
-        const sig = await initializePool(
-          program,
-          authority,
-          collateralMint,
-          borrowMint,
-          ltv,
-          liquidationThreshold
-        );
+        // Get fresh blockhash immediately before transaction
+        const { blockhash, lastValidBlockHeight } = await provider.connection.getLatestBlockhash('confirmed');
+        
+        // Initialize pool with fresh blockhash
+        const [poolPda] = findPoolPda(program.programId, collateralMint);
+        const [collateralVaultPda] = findCollateralVaultPda(program.programId, collateralMint);
+        const [borrowVaultPda] = findBorrowVaultPda(program.programId, collateralMint);
 
-        // Wait for confirmation and event propagation
-        await provider.connection.confirmTransaction(sig, "confirmed");
+        const tx = await program.methods
+          .initializePool(ltv, liquidationThreshold, 500, new BN(500))
+          .accountsPartial({
+            authority: authority.publicKey,
+            collateralMint: collateralMint,
+            borrowMint: borrowMint,
+          })
+          .transaction();
+        
+        tx.recentBlockhash = blockhash;
+        tx.lastValidBlockHeight = lastValidBlockHeight;
+        tx.feePayer = authority.publicKey;
+        tx.sign(authority);
+        
+        const sig = await provider.connection.sendRawTransaction(tx.serialize(), {
+          skipPreflight: false,
+          maxRetries: 3
+        });
+
+        // Wait for confirmation
+        await provider.connection.confirmTransaction({
+          signature: sig,
+          blockhash,
+          lastValidBlockHeight
+        }, "confirmed");
         
         // Give time for event to be processed
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        await new Promise(resolve => setTimeout(resolve, 1000));
 
         // Verify event was received
         expect(eventReceived).to.not.be.null;
@@ -574,8 +603,11 @@ describe("ShadowLend Protocol Tests", () => {
       // Setup event listener
       const depositQueuedPromise = awaitEvent("depositQueued");
 
+      // Get fresh blockhash immediately before transaction
+      const { blockhash, lastValidBlockHeight } = await provider.connection.getLatestBlockhash('confirmed');
+
       // Queue deposit computation
-      const sig = await program.methods
+      const tx = await program.methods
         .deposit(
           computationOffset,
           Array.from(encryptedAmount) as number[],
@@ -599,8 +631,23 @@ describe("ShadowLend Protocol Tests", () => {
             Buffer.from(getCompDefAccOffset("compute_confidential_deposit")).readUInt32LE()
           ),
         })
-        .signers([owner])
-        .rpc({ skipPreflight: true, commitment: "confirmed" });
+        .transaction();
+      
+      tx.recentBlockhash = blockhash;
+      tx.lastValidBlockHeight = lastValidBlockHeight;
+      tx.feePayer = owner.publicKey;
+      tx.sign(owner);
+      
+      const sig = await provider.connection.sendRawTransaction(tx.serialize(), {
+        skipPreflight: true,
+        maxRetries: 3
+      });
+      
+      await provider.connection.confirmTransaction({
+        signature: sig,
+        blockhash,
+        lastValidBlockHeight
+      }, "confirmed");
 
       console.log("Deposit queued tx:", sig);
 
@@ -739,8 +786,11 @@ describe("ShadowLend Protocol Tests", () => {
 
       const computationOffset = new BN(randomBytes(8), "hex");
 
+      // Get fresh blockhash immediately before transaction
+      const { blockhash, lastValidBlockHeight } = await provider.connection.getLatestBlockhash('confirmed');
+
       // Queue deposit
-      await program.methods
+      const tx = await program.methods
         .deposit(
           computationOffset,
           Array.from(encryptedAmount) as number[],
@@ -764,8 +814,23 @@ describe("ShadowLend Protocol Tests", () => {
             Buffer.from(getCompDefAccOffset("compute_confidential_deposit")).readUInt32LE()
           ),
         })
-        .signers([owner])
-        .rpc({ skipPreflight: true, commitment: "confirmed" });
+        .transaction();
+      
+      tx.recentBlockhash = blockhash;
+      tx.lastValidBlockHeight = lastValidBlockHeight;
+      tx.feePayer = owner.publicKey;
+      tx.sign(owner);
+      
+      const sig = await provider.connection.sendRawTransaction(tx.serialize(), {
+        skipPreflight: true,
+        maxRetries: 3
+      });
+      
+      await provider.connection.confirmTransaction({
+        signature: sig,
+        blockhash,
+        lastValidBlockHeight
+      }, "confirmed");
 
       // Verify user obligation was created with correct initial values
       const userObligation = await program.account.userObligation.fetch(

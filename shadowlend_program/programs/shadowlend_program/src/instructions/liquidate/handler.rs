@@ -1,8 +1,9 @@
 use anchor_lang::prelude::*;
 use arcium_anchor::prelude::*;
 
-use super::accounts::{Liquidate, SOL_PRICE_CENTS, USDC_PRICE_CENTS};
-use super::callback::ComputeLiquidateCallback;
+use super::accounts::Liquidate;
+use super::callback::ComputeConfidentialLiquidateCallback;
+use crate::constants::{SOL_PRICE_CENTS, USDC_PRICE_CENTS};
 use crate::error::ErrorCode;
 
 /// Queue liquidation computation to Arcium MXE
@@ -59,7 +60,7 @@ pub fn liquidate_handler(
         computation_offset,
         args,
         None, // No callback server
-        vec![ComputeLiquidateCallback::callback_ix(
+        vec![ComputeConfidentialLiquidateCallback::callback_ix(
             computation_offset,
             &ctx.accounts.mxe_account,
             &[],

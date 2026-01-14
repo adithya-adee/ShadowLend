@@ -7,17 +7,15 @@ use crate::state::{Pool, UserObligation};
 use crate::ID;
 use arcium_client::idl::arcium::ID_CONST;
 
-const COMP_DEF_OFFSET_COMPUTE_WITHDRAW: u32 = comp_def_offset("compute_withdraw");
+const COMP_DEF_OFFSET: u32 = comp_def_offset("compute_confidential_withdraw");
 
-/// Callback after MXE withdraw computation completes
-/// Performs token transfer (vault -> user) AFTER verification
-#[callback_accounts("compute_withdraw")]
+/// Callback accounts for confidential withdraw MXE computation
+#[callback_accounts("compute_confidential_withdraw")]
 #[derive(Accounts)]
-pub struct ComputeWithdrawCallback<'info> {
-    // === Arcium Required Accounts ===
+pub struct ComputeConfidentialWithdrawCallback<'info> {
     pub arcium_program: Program<'info, Arcium>,
 
-    #[account(address = derive_comp_def_pda!(COMP_DEF_OFFSET_COMPUTE_WITHDRAW))]
+    #[account(address = derive_comp_def_pda!(COMP_DEF_OFFSET))]
     pub comp_def_account: Box<Account<'info, ComputationDefinitionAccount>>,
 
     #[account(address = derive_mxe_pda!())]
@@ -33,7 +31,6 @@ pub struct ComputeWithdrawCallback<'info> {
     /// CHECK: Instructions sysvar
     pub instructions_sysvar: AccountInfo<'info>,
 
-    // === ShadowLend State Accounts ===
     #[account(
         mut,
         seeds = [Pool::SEED_PREFIX, pool.collateral_mint.as_ref()],
@@ -48,7 +45,6 @@ pub struct ComputeWithdrawCallback<'info> {
     )]
     pub user_obligation: Box<Account<'info, UserObligation>>,
 
-    // === Token Accounts ===
     pub collateral_mint: Box<Account<'info, Mint>>,
 
     #[account(
@@ -75,18 +71,17 @@ pub struct ComputeWithdrawCallback<'info> {
     pub token_program: Program<'info, Token>,
 }
 
-/// Process MXE withdraw result and transfer tokens from vault to user
-/// CONFIDENTIAL: Amount extracted for transfer but NOT emitted in events
+/// Process MXE withdraw result - transfers tokens from vault to user
 pub fn withdraw_callback_handler(
-    ctx: Context<ComputeWithdrawCallback>,
-    output: SignedComputationOutputs<ComputeWithdrawOutput>,
+    ctx: Context<ComputeConfidentialWithdrawCallback>,
+    output: SignedComputationOutputs<ComputeConfidentialWithdrawOutput>,
 ) -> Result<()> {
-    // Verify MXE output signature
+    // Verify MXE output signature - output is a tuple struct wrapped in field_0
     let result = match output.verify_output(
         &ctx.accounts.cluster_account,
         &ctx.accounts.computation_account,
     ) {
-        Ok(ComputeWithdrawOutput { field_0 }) => field_0,
+        Ok(ComputeConfidentialWithdrawOutput { field_0 }) => field_0,
         Err(e) => {
             msg!("Computation verification failed: {}", e);
             return Err(ErrorCode::AbortedComputation.into());
@@ -95,34 +90,33 @@ pub fn withdraw_callback_handler(
 
     msg!("MXE withdraw computation verified");
 
+    // Access user output (field_0 of the tuple struct)
+    // field_0: ConfidentialWithdrawOutput (Shared), field_1: PoolState (MXE)
+    let user_output = &result.field_0;
+
     require!(
-        result.ciphertexts.len() >= 6,
+        !user_output.ciphertexts.is_empty(),
         ErrorCode::InvalidComputationOutput
     );
 
-    // Extract approved (first field, revealed bool)
-    let approved = result.ciphertexts[0][0] != 0;
+    // Extract approval and amount
+    let approved = user_output.ciphertexts[0][0] != 0;
     require!(approved, ErrorCode::WithdrawRejected);
 
-    // Extract withdraw_delta (last field, revealed u64)
-    let withdraw_delta_idx = result.ciphertexts.len() - 1;
+    let withdraw_delta_idx = user_output.ciphertexts.len() - 1;
     let withdraw_amount = u64::from_le_bytes(
-        result.ciphertexts[withdraw_delta_idx][0..8]
+        user_output.ciphertexts[withdraw_delta_idx][0..8]
             .try_into()
             .map_err(|_| ErrorCode::InvalidComputationOutput)?
     );
 
     require!(withdraw_amount > 0, ErrorCode::InvalidWithdrawAmount);
-
-    // NOTE: Amount is NOT logged for confidentiality
-
-    // Check vault has sufficient balance
     require!(
         ctx.accounts.collateral_vault.amount >= withdraw_amount,
         ErrorCode::InsufficientLiquidity
     );
 
-    // Transfer tokens from vault to user (pool PDA signs)
+    // Transfer tokens from vault to user
     let collateral_mint = ctx.accounts.pool.collateral_mint;
     let seeds = &[
         Pool::SEED_PREFIX,
@@ -143,17 +137,14 @@ pub fn withdraw_callback_handler(
     );
     token::transfer(transfer_ctx, withdraw_amount)?;
 
-    msg!("Token transfer completed");
-
-    // Update user obligation with new encrypted state
+    // Update user obligation
     let user_obligation = &mut ctx.accounts.user_obligation;
-
     user_obligation.state_nonce = user_obligation
         .state_nonce
         .checked_add(1)
         .ok_or(ErrorCode::MathOverflow)?;
 
-    let state_ciphertexts: Vec<u8> = result.ciphertexts[1..5]
+    let state_ciphertexts: Vec<u8> = user_output.ciphertexts[..4]
         .iter()
         .flat_map(|c| c.to_vec())
         .collect();
@@ -164,24 +155,15 @@ pub fn withdraw_callback_handler(
         commitment[i % 32] ^= byte;
     }
     user_obligation.state_commitment = commitment;
-
-    // Update claimed tracker
     user_obligation.total_claimed = user_obligation
         .total_claimed
         .checked_add(withdraw_amount)
         .ok_or(ErrorCode::MathOverflow)?;
-
     user_obligation.last_update_ts = Clock::get()?.unix_timestamp;
 
-    msg!("User obligation state updated");
-
-    // Update pool timestamp only (aggregates now encrypted in MXE)
     let pool = &mut ctx.accounts.pool;
     pool.last_update_ts = Clock::get()?.unix_timestamp;
 
-    msg!("Pool state updated");
-
-    // Emit CONFIDENTIAL event - NO amount field
     emit!(WithdrawCompleted {
         user: user_obligation.user,
         pool: ctx.accounts.pool.key(),
@@ -193,8 +175,7 @@ pub fn withdraw_callback_handler(
     Ok(())
 }
 
-/// Withdraw completion event
-/// CONFIDENTIAL: No amount field
+/// Withdraw completion event (no amount for confidentiality)
 #[event]
 pub struct WithdrawCompleted {
     pub user: Pubkey,

@@ -1,8 +1,9 @@
 use anchor_lang::prelude::*;
 use arcium_anchor::prelude::*;
 
-use super::accounts::{Withdraw, SOL_PRICE_CENTS, USDC_PRICE_CENTS};
-use super::callback::ComputeWithdrawCallback;
+use super::accounts::Withdraw;
+use super::callback::ComputeConfidentialWithdrawCallback;
+use crate::constants::{SOL_PRICE_CENTS, USDC_PRICE_CENTS};
 use crate::error::ErrorCode;
 
 /// Queue withdraw computation to Arcium MXE
@@ -63,7 +64,7 @@ pub fn withdraw_handler(
         computation_offset,
         args,
         None, // No callback server
-        vec![ComputeWithdrawCallback::callback_ix(
+        vec![ComputeConfidentialWithdrawCallback::callback_ix(
             computation_offset,
             &ctx.accounts.mxe_account,
             &[],

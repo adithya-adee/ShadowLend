@@ -4,8 +4,7 @@
 // - Pool initialization
 // - Arcium computation definition registration
 
-pub mod init_comp_defs;
-pub mod initialize_pool;
-
+mod init_comp_defs;
+mod initialize_pool;
 pub use init_comp_defs::*;
 pub use initialize_pool::*;

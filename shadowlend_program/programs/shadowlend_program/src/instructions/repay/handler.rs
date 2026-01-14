@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use arcium_anchor::prelude::*;
 
 use super::accounts::Repay;
-use super::callback::ComputeRepayCallback;
+use super::callback::ComputeConfidentialRepayCallback;
 use crate::error::ErrorCode;
 
 /// Queue repay computation to Arcium MXE
@@ -57,7 +57,7 @@ pub fn repay_handler(
         computation_offset,
         args,
         None, // No callback server
-        vec![ComputeRepayCallback::callback_ix(
+        vec![ComputeConfidentialRepayCallback::callback_ix(
             computation_offset,
             &ctx.accounts.mxe_account,
             &[],

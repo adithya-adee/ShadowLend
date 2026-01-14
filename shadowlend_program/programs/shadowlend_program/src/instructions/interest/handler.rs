@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use arcium_anchor::prelude::*;
 
 use super::accounts::UpdateInterest;
-use super::callback::ComputeInterestCallback;
+use super::callback::ComputeConfidentialInterestCallback;
 use crate::error::ErrorCode;
 
 /// Queue interest accrual computation to Arcium MXE
@@ -50,7 +50,7 @@ pub fn update_interest_handler(
         computation_offset,
         args,
         None,
-        vec![ComputeInterestCallback::callback_ix(
+        vec![ComputeConfidentialInterestCallback::callback_ix(
             computation_offset,
             &ctx.accounts.mxe_account,
             &[],

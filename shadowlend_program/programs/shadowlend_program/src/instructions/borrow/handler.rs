@@ -1,8 +1,9 @@
 use anchor_lang::prelude::*;
 use arcium_anchor::prelude::*;
 
-use super::accounts::{Borrow, SOL_PRICE_CENTS, USDC_PRICE_CENTS};
-use super::callback::ComputeBorrowCallback;
+use super::accounts::Borrow;
+use super::callback::ComputeConfidentialBorrowCallback;
+use crate::constants::{SOL_PRICE_CENTS, USDC_PRICE_CENTS};
 use crate::error::ErrorCode;
 
 /// Queue borrow computation to Arcium MXE
@@ -53,7 +54,7 @@ pub fn borrow_handler(
         computation_offset,
         args,
         None,
-        vec![ComputeBorrowCallback::callback_ix(
+        vec![ComputeConfidentialBorrowCallback::callback_ix(
             computation_offset,
             &ctx.accounts.mxe_account,
             &[],

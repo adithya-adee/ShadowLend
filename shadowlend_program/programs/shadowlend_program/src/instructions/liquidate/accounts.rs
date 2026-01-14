@@ -7,9 +7,7 @@ use arcium_client::idl::arcium::ID_CONST;
 
 use crate::error::ErrorCode;
 
-/// Mock prices for hackathon (in cents)
-pub const SOL_PRICE_CENTS: u64 = 15000; // $150
-pub const USDC_PRICE_CENTS: u64 = 100;  // $1
+
 
 /// Accounts for liquidate instruction (queues computation only)
 /// Token transfers happen in callback after MXE verification

@@ -4,9 +4,9 @@
 // - Handler: queues computation to Arcium MXE
 // - Callback: verifies output and transfers tokens from vault to user
 
-pub mod accounts;
-pub mod callback;
-pub mod handler;
+mod accounts;
+mod callback;
+mod handler;
 
 pub use accounts::*;
 pub use callback::*;

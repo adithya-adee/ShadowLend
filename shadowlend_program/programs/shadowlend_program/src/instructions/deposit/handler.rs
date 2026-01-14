@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use arcium_anchor::prelude::*;
 
 use super::accounts::Deposit;
-use super::callback::ComputeDepositCallback;
+use super::callback::ComputeConfidentialDepositCallback;
 use crate::error::ErrorCode;
 
 /// Queue deposit computation to Arcium MXE
@@ -56,7 +56,7 @@ pub fn deposit_handler(
         computation_offset,
         args,
         None,
-        vec![ComputeDepositCallback::callback_ix(
+        vec![ComputeConfidentialDepositCallback::callback_ix(
             computation_offset,
             &ctx.accounts.mxe_account,
             &[],

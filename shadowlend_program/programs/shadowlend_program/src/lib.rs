@@ -1,9 +1,12 @@
 use anchor_lang::prelude::*;
 use arcium_anchor::prelude::*;
 
+pub mod constants;
 pub mod error;
 pub mod instructions;
 pub mod state;
+
+pub use constants::*;
 
 pub use instructions::*;
 pub use state::*;
@@ -15,22 +18,22 @@ declare_id!("6KiV2x1SxqtPALq9gdyxFXZiuWmwFRdsxMNpnyyPThg3");
 // ============================================================
 
 /// Computation definition offset for deposit circuit
-pub const COMP_DEF_OFFSET_COMPUTE_DEPOSIT: u32 = comp_def_offset("compute_deposit");
+pub const COMP_DEF_OFFSET_COMPUTE_DEPOSIT: u32 = comp_def_offset("compute_confidential_deposit");
 
 /// Computation definition offset for borrow circuit
-pub const COMP_DEF_OFFSET_COMPUTE_BORROW: u32 = comp_def_offset("compute_borrow");
+pub const COMP_DEF_OFFSET_COMPUTE_BORROW: u32 = comp_def_offset("compute_confidential_borrow");
 
 /// Computation definition offset for withdraw circuit
-pub const COMP_DEF_OFFSET_COMPUTE_WITHDRAW: u32 = comp_def_offset("compute_withdraw");
+pub const COMP_DEF_OFFSET_COMPUTE_WITHDRAW: u32 = comp_def_offset("compute_confidential_withdraw");
 
 /// Computation definition offset for repay circuit
-pub const COMP_DEF_OFFSET_COMPUTE_REPAY: u32 = comp_def_offset("compute_repay");
+pub const COMP_DEF_OFFSET_COMPUTE_REPAY: u32 = comp_def_offset("compute_confidential_repay");
 
 /// Computation definition offset for liquidate circuit
-pub const COMP_DEF_OFFSET_COMPUTE_LIQUIDATE: u32 = comp_def_offset("compute_liquidate");
+pub const COMP_DEF_OFFSET_COMPUTE_LIQUIDATE: u32 = comp_def_offset("compute_confidential_liquidate");
 
 /// Computation definition offset for interest circuit
-pub const COMP_DEF_OFFSET_COMPUTE_INTEREST: u32 = comp_def_offset("compute_interest");
+pub const COMP_DEF_OFFSET_COMPUTE_INTEREST: u32 = comp_def_offset("compute_confidential_interest");
 
 #[arcium_program]
 pub mod shadowlend_program {
@@ -128,10 +131,10 @@ pub mod shadowlend_program {
     }
 
     /// Callback from Arcium MXE after deposit computation completes
-    #[arcium_callback(encrypted_ix = "compute_deposit")]
-    pub fn compute_deposit_callback(
-        ctx: Context<ComputeDepositCallback>,
-        output: SignedComputationOutputs<ComputeDepositOutput>,
+    #[arcium_callback(encrypted_ix = "compute_confidential_deposit")]
+    pub fn compute_confidential_deposit_callback(
+        ctx: Context<ComputeConfidentialDepositCallback>,
+        output: SignedComputationOutputs<ComputeConfidentialDepositOutput>,
     ) -> Result<()> {
         instructions::deposit::deposit_callback_handler(ctx, output)
     }
@@ -164,10 +167,10 @@ pub mod shadowlend_program {
     }
 
     /// Callback from Arcium MXE after borrow computation completes
-    #[arcium_callback(encrypted_ix = "compute_borrow")]
-    pub fn compute_borrow_callback(
-        ctx: Context<ComputeBorrowCallback>,
-        output: SignedComputationOutputs<ComputeBorrowOutput>,
+    #[arcium_callback(encrypted_ix = "compute_confidential_borrow")]
+    pub fn compute_confidential_borrow_callback(
+        ctx: Context<ComputeConfidentialBorrowCallback>,
+        output: SignedComputationOutputs<ComputeConfidentialBorrowOutput>,
     ) -> Result<()> {
         instructions::borrow::borrow_callback_handler(ctx, output)
     }
@@ -200,10 +203,10 @@ pub mod shadowlend_program {
     }
 
     /// Callback from Arcium MXE after withdraw computation completes
-    #[arcium_callback(encrypted_ix = "compute_withdraw")]
-    pub fn compute_withdraw_callback(
-        ctx: Context<ComputeWithdrawCallback>,
-        output: SignedComputationOutputs<ComputeWithdrawOutput>,
+    #[arcium_callback(encrypted_ix = "compute_confidential_withdraw")]
+    pub fn compute_confidential_withdraw_callback(
+        ctx: Context<ComputeConfidentialWithdrawCallback>,
+        output: SignedComputationOutputs<ComputeConfidentialWithdrawOutput>,
     ) -> Result<()> {
         instructions::withdraw::withdraw_callback_handler(ctx, output)
     }
@@ -236,10 +239,10 @@ pub mod shadowlend_program {
     }
 
     /// Callback from Arcium MXE after repay computation completes
-    #[arcium_callback(encrypted_ix = "compute_repay")]
-    pub fn compute_repay_callback(
-        ctx: Context<ComputeRepayCallback>,
-        output: SignedComputationOutputs<ComputeRepayOutput>,
+    #[arcium_callback(encrypted_ix = "compute_confidential_repay")]
+    pub fn compute_confidential_repay_callback(
+        ctx: Context<ComputeConfidentialRepayCallback>,
+        output: SignedComputationOutputs<ComputeConfidentialRepayOutput>,
     ) -> Result<()> {
         instructions::repay::repay_callback_handler(ctx, output)
     }
@@ -264,10 +267,10 @@ pub mod shadowlend_program {
     }
 
     /// Callback from Arcium MXE after liquidation computation completes
-    #[arcium_callback(encrypted_ix = "compute_liquidate")]
-    pub fn compute_liquidate_callback(
-        ctx: Context<ComputeLiquidateCallback>,
-        output: SignedComputationOutputs<ComputeLiquidateOutput>,
+    #[arcium_callback(encrypted_ix = "compute_confidential_liquidate")]
+    pub fn compute_confidential_liquidate_callback(
+        ctx: Context<ComputeConfidentialLiquidateCallback>,
+        output: SignedComputationOutputs<ComputeConfidentialLiquidateOutput>,
     ) -> Result<()> {
         instructions::liquidate::liquidate_callback_handler(ctx, output)
     }
@@ -288,10 +291,10 @@ pub mod shadowlend_program {
     }
 
     /// Callback from Arcium MXE after interest computation completes
-    #[arcium_callback(encrypted_ix = "compute_interest")]
-    pub fn compute_interest_callback(
-        ctx: Context<ComputeInterestCallback>,
-        output: SignedComputationOutputs<ComputeInterestOutput>,
+    #[arcium_callback(encrypted_ix = "compute_confidential_interest")]
+    pub fn compute_confidential_interest_callback(
+        ctx: Context<ComputeConfidentialInterestCallback>,
+        output: SignedComputationOutputs<ComputeConfidentialInterestOutput>,
     ) -> Result<()> {
         instructions::interest::update_interest_callback_handler(ctx, output)
     }

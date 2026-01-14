@@ -3,9 +3,9 @@
 // Handles depositing collateral into the lending pool.
 // Uses Arcium MXE to keep individual deposit amounts private.
 
-pub mod accounts;
-pub mod callback;
-pub mod handler;
+mod accounts;
+mod callback;
+mod handler;
 
 pub use accounts::*;
 pub use callback::*;

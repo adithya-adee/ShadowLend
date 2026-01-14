@@ -11,7 +11,7 @@ use crate::error::ErrorCode;
 
 /// Accounts for borrow instruction (queues computation only)
 /// Token transfer happens in callback after MXE verification
-#[queue_computation_accounts("compute_borrow", payer)]
+#[queue_computation_accounts("compute_confidential_borrow", payer)]
 #[derive(Accounts)]
 #[instruction(computation_offset: u64)]
 pub struct Borrow<'info> {

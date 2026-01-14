@@ -11,7 +11,7 @@ use crate::error::ErrorCode;
 
 /// Accounts for liquidate instruction (queues computation only)
 /// Token transfers happen in callback after MXE verification
-#[queue_computation_accounts("compute_liquidate", payer)]
+#[queue_computation_accounts("compute_confidential_liquidate", payer)]
 #[derive(Accounts)]
 #[instruction(computation_offset: u64)]
 pub struct Liquidate<'info> {

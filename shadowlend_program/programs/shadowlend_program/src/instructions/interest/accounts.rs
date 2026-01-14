@@ -9,7 +9,7 @@ use crate::error::ErrorCode;
 
 /// Accounts for interest accrual instruction (queues computation only)
 /// No token transfer - just state update
-#[queue_computation_accounts("compute_interest", payer)]
+#[queue_computation_accounts("compute_confidential_interest", payer)]
 #[derive(Accounts)]
 #[instruction(computation_offset: u64)]
 pub struct UpdateInterest<'info> {

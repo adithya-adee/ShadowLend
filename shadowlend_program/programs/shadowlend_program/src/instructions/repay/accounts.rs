@@ -9,7 +9,7 @@ use crate::error::ErrorCode;
 
 /// Accounts for repay instruction (queues computation only)
 /// Token transfer happens in callback after MXE verification
-#[queue_computation_accounts("compute_repay", payer)]
+#[queue_computation_accounts("compute_confidential_repay", payer)]
 #[derive(Accounts)]
 #[instruction(computation_offset: u64)]
 pub struct Repay<'info> {

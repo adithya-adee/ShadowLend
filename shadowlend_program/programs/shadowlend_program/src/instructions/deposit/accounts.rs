@@ -9,7 +9,7 @@ use crate::error::ErrorCode;
 
 /// Accounts for deposit instruction (queues computation only)
 /// Token transfer happens in callback after MXE verification
-#[queue_computation_accounts("compute_deposit", payer)]
+#[queue_computation_accounts("compute_confidential_deposit", payer)]
 #[derive(Accounts)]
 #[instruction(computation_offset: u64)]
 pub struct Deposit<'info> {

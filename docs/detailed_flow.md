@@ -1,6 +1,8 @@
 # ShadowLend V1 - Complete Flow Diagrams
 
-## 1. Deposit Flow (Lender deposits collateral)
+## 1. Deposit Flow (Two-Phase Confidential Model)
+
+### Phase 1: Fund Account (Visible)
 
 ```mermaid
 sequenceDiagram
@@ -10,77 +12,113 @@ sequenceDiagram
     participant Solana as Solana Program
     participant Pool as Pool PDA
     participant UserObl as UserObligation PDA
-    participant ArciumCfg as ArciumConfig PDA
-    participant Arcium as Arcium MXE
     participant Token as Token Program
 
-    Lender->>Wallet: Sign deposit transaction (100 SOL)
+    Lender->>Wallet: Sign fund transaction (100 SOL)
     Wallet->>Client: tx_signature
-    Client->>Client: Derive shared_secret = HKDF(tx_signature)
-    Client->>Client: encrypted_request = AES-GCM({amount: 100, op: "deposit"})
-
-    Client->>Solana: deposit(encrypted_request)
+    
+    Client->>Solana: fund_account(amount: 100)
 
     Note over Solana: Verify signer == Lender
 
     Solana->>Pool: READ: Check pool exists
-    Solana->>UserObl: WRITE: Create if first deposit<br/>Seeds: ["obligation", lender, pool]
+    Solana->>UserObl: READ/CREATE: Fetch/init obligation<br/>Seeds: ["obligation", lender, pool]
 
-    Solana->>ArciumCfg: READ: Get trusted MXE nodes
-    Solana->>Arcium: CPI: arcium::compute_deposit()<br/>(encrypted_request, user_obl)
+    Solana->>Token: Transfer 100 SOL: Lender → Pool vault
+    
+    Solana->>UserObl: WRITE: total_funded += 100
+    Solana->>Pool: WRITE: vault_nonce += 1
+
+    Solana->>Client: Emit AccountFunded { amount: 100, total_funded }
+    Client->>Lender: ✅ Funded 100 SOL (visible on-chain)
+```
+
+### Phase 2: Credit Balance (Hidden)
+
+```mermaid
+sequenceDiagram
+    actor Lender as 👤 Lender
+    participant Wallet as Wallet
+    participant Client as Client App
+    participant Solana as Solana Program
+    participant Pool as Pool PDA
+    participant UserObl as UserObligation PDA
+    participant Arcium as Arcium MXE
+
+    Lender->>Wallet: Sign deposit transaction (encrypted_amount)
+    Wallet->>Client: tx_signature
+    Client->>Client: Encrypt amount with x25519 key
+    Client->>Client: encrypted_amount = Enc<Shared, 100>
+
+    Client->>Solana: deposit(encrypted_amount)
+
+    Note over Solana: Verify signer == Lender
+
+    Solana->>UserObl: READ: Get total_funded, total_claimed
+    Solana->>Solana: max_creditable = total_funded - total_claimed
+
+    Solana->>Arcium: CPI: compute_confidential_deposit()<br/>(encrypted_amount, user_state, pool_state, max_creditable)
 
     Note over Arcium: Inside TEE (Private Computation)
-    Arcium->>Arcium: Decrypt request using shared_secret
-    Arcium->>Arcium: Validate: signature, timestamp, nonce
+    Arcium->>Arcium: Decrypt amount (100 SOL)
+    Arcium->>Arcium: Verify: 100 <= max_creditable ✅
     Arcium->>UserObl: READ: Decrypt encrypted_state_blob
     Arcium->>Arcium: old_deposit = decrypt(blob).deposit_amount
     Arcium->>Arcium: new_deposit = old_deposit + 100
-    Arcium->>Arcium: new_state = {deposit: new_deposit, borrow: old_borrow}
-    Arcium->>Arcium: encrypted_blob = AES-GCM(new_state, mxe_key)
-    Arcium->>Arcium: state_commitment = SHA-256(encrypted_blob)
-    Arcium->>Arcium: attestation = Ed25519_sign(lender || commitment || ts)
+    Arcium->>Pool: READ: Decrypt encrypted_pool_state
+    Arcium->>Arcium: pool.total_deposits += 100 (HIDDEN)
+    Arcium->>Arcium: new_user_state = {deposit: new_deposit, ...}
+    Arcium->>Arcium: new_pool_state = {total_deposits: ..., ...}
+    Arcium->>Arcium: Encrypt outputs with Enc<Shared> and Enc<Mxe>
 
-    Arcium-->>Solana: Return (attestation, encrypted_blob)
+    Arcium-->>Solana: Return (Enc<UserState>, Enc<PoolState>, success: true)
 
-    Note over Solana: Verify Attestation
-    Solana->>Solana: Ed25519_verify(attestation.signature)
-    Solana->>Solana: Check MRENCLAVE == trusted_enclave
-    Solana->>Solana: Check timestamp < 60s old
-    Solana->>Solana: Verify SHA-256(encrypted_blob) == commitment
+    Note over Solana: Verify MXE Output
+    Solana->>Solana: Verify MXE attestation
+    Solana->>Solana: Check success == true
 
     Solana->>UserObl: WRITE: Update encrypted_state_blob
-    Solana->>UserObl: WRITE: Update state_commitment
-    Solana->>UserObl: WRITE: Increment state_nonce (prevent replay)
-    Solana->>UserObl: WRITE: Store attestation
+    Solana->>UserObl: WRITE: Update state_commitment (SHA-256)
+    Solana->>UserObl: WRITE: Increment state_nonce (replay protection)
+    Solana->>Pool: WRITE: Update encrypted_pool_state
+    Solana->>Pool: WRITE: Update pool_state_commitment
 
-    Solana->>Pool: WRITE: total_deposits += 100
-    Solana->>Pool: WRITE: Recalculate utilization_rate
-
-    Solana->>Token: Transfer 100 SOL: Lender → Pool vault
-
-    Solana->>Client: Emit DepositExecuted event
-    Client->>Lender: ✅ Deposited 100 SOL (collateral locked)
+    Solana->>Client: Emit DepositCompleted { success } (NO amount!)
+    Client->>Lender: ✅ Credited 100 SOL (balance HIDDEN)
 ```
 
 ### Example Flow
 
 **Scenario**: Alice deposits 100 SOL as collateral
 
-1. **Alice signs**: "I want to deposit 100 SOL" → signature generated
-2. **Client encrypts**: Uses signature to derive key, encrypts `{amount: 100, operation: "deposit"}`
-3. **Solana receives**: Creates/fetches Alice's UserObligation PDA at `["obligation", alice_pubkey, pool_pubkey]`
-4. **Forward to Arcium**: Calls `arcium::compute_deposit()` with encrypted request
-5. **Arcium (in TEE)**:
-   - Decrypts request → sees Alice wants to deposit 100
-   - Reads Alice's current balance (maybe she had 50 SOL already)
-   - Updates: `new_deposit = 50 + 100 = 150 SOL`
-   - Encrypts new state, creates attestation
-6. **Solana verifies**: Checks attestation is valid (correct signature, fresh timestamp)
-7. **Solana updates**:
-   - UserObligation: stores new encrypted blob (now shows 150 SOL, but encrypted)
-   - Pool: increases `total_deposits` by 100 (public aggregate)
-8. **Token transfer**: 100 SOL moved from Alice → Pool vault
-9. **Result**: Alice has 150 SOL collateral (private), Pool shows +100 publicly
+**Phase 1 - Fund**:
+1. **Alice signs**: "I want to fund 100 SOL" → transaction signed
+2. **SPL Transfer**: 100 SOL moved from Alice → Pool vault (VISIBLE on-chain)
+3. **Tracking**: Alice's `total_funded` = 100 (visible)
+4. **Result**: Tokens in vault, but balance NOT yet credited
+
+**Phase 2 - Credit**:
+1. **Alice encrypts**: Client encrypts `amount: 100` with x25519 key
+2. **Solana verifies**: Alice has funded 100, hasn't credited yet → max_creditable = 100
+3. **Forward to Arcium**: `compute_confidential_deposit(encrypted_amount: 100, max_creditable: 100)`
+4. **Arcium (in TEE)**:
+   - Decrypts amount → sees Alice wants to credit 100
+   - Verifies: 100 <= 100 ✅
+   - Reads Alice's current balance (maybe she had 50 SOL already from before)
+   - Updates: `new_deposit = 50 + 100 = 150 SOL` (ENCRYPTED)
+   - Updates pool: `total_deposits += 100` (ENCRYPTED in `Enc<Mxe, PoolState>`)
+5. **Solana updates**:
+   - UserObligation: stores new encrypted blob (now shows 150 SOL, but ENCRYPTED)
+   - Pool: stores new encrypted pool state (TVL HIDDEN)
+   - NO amount in event!
+6. **Result**: 
+   - Alice has 150 SOL collateral (PRIVATE - only she can decrypt)
+   - Pool TVL increased by 100 (PRIVATE - only MXE knows)
+   - Observers only see: "Alice deposited successfully" (NO amounts)
+
+**Privacy Improvement**: 
+- Old model: Observers see "Alice deposited 100 SOL" → can track her balance
+- New model: Observers see "Alice funded 100 SOL" then "Alice deposited (success)" → credit amount HIDDEN
 
 ---
 
@@ -358,9 +396,16 @@ sequenceDiagram
 
 | Flow            | Private (Hidden)                                  | Public (Visible)                                     |
 | --------------- | ------------------------------------------------- | ---------------------------------------------------- |
-| **Deposit**     | Individual deposit amount                         | Pool total deposits increased                        |
-| **Borrow**      | Health factor calculation, collateral composition | Pool total borrows increased                         |
-| **Interest**    | Individual interest accrued                       | Pool accumulated interest aggregate                  |
-| **Liquidation** | Exact health factor before liquidation            | Liquidation amounts (debt repaid, collateral seized) |
+| **Fund**        | -                                                 | Fund amount (SPL transfer)                           |
+| **Deposit**     | Credit amount, new balance, pool TVL              | Success flag only                                    |
+| **Borrow**      | Borrow amount, health factor, new balance         | Approval flag only                                   |
+| **Interest**    | Individual interest accrued, new balance          | Success flag only                                    |
+| **Liquidation** | Exact health factor before liquidation            | Liquidation amounts (safety requirement)             |
 
-**Universal Privacy**: All individual balances encrypted in `UserObligation.encrypted_state_blob`. Only pool-level aggregates public. 🔒
+**Universal Privacy**: 
+- All individual balances encrypted in `UserObligation.encrypted_state_blob` (`Enc<Shared, UserState>`)
+- Pool TVL encrypted in `Pool.encrypted_pool_state` (`Enc<Mxe, PoolState>`)
+- Users can decrypt their own state with private keys
+- Only MXE can decrypt pool aggregates
+- No amounts in events/logs (except liquidations) 🔒
+

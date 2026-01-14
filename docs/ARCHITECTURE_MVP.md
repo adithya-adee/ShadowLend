@@ -6,9 +6,13 @@
 
 ## Executive Summary
 
-ShadowLend V1 is a privacy-preserving lending protocol built on Solana using **Arcium MXE (Multi-party eXecution Environment)** for confidential computation. Users can deposit collateral, borrow assets, and get liquidated—all while keeping their individual balances and health factors **completely private**. Only pool aggregates are public.
+ShadowLend V1 is a **fully confidential** lending protocol built on Solana using **Arcium MXE (Multi-party eXecution Environment)**. Users can deposit collateral, borrow assets, and manage positions while keeping **all transaction amounts, balances, and pool aggregates completely private**.
 
-**Core Innovation**: Encrypted user states computed inside Arcium's TEE, verified on-chain via Ed25519 attestations.
+**Core Innovation**: 
+- **Encrypted Pool State**: Pool TVL hidden using `Enc<Mxe, PoolState>` - only MXE can decrypt
+- **Two-Phase Deposits**: Visible funding decoupled from hidden balance credits
+- **Zero Amount Leakage**: No amounts in events, logs, or callbacks (except liquidations for safety)
+- **User-Decryptable State**: Users decrypt their own balances with private keys via `Enc<Shared, UserState>`
 
 ---
 
@@ -121,62 +125,77 @@ graph TB
 
 ## 3. Account Structures & PDAs
 
-### Pool Account
+### Pool Account (Confidential)
 
-**PDA Seeds**: `["pool", mint.key()]`  
-**Size**: ~320 bytes | **Rent**: 0.00298 SOL (~$0.45)
+**PDA Seeds**: `["pool", collateral_mint.key()]`  
+**Size**: ~400 bytes | **Rent**: 0.00350 SOL (~$0.53)
 
 ```rust
 pub struct Pool {
-    pub authority: Pubkey,           // Protocol admin
-    pub mint: Pubkey,                // Lending token (e.g., USDC)
+    pub authority: Pubkey,
+    pub collateral_mint: Pubkey,     // e.g., SOL
+    pub borrow_mint: Pubkey,         // e.g., USDC
 
-    // Public Aggregates
+    // === ENCRYPTED Pool Aggregates (Enc<Mxe, PoolState>) ===
+    // Pool TVL is now HIDDEN - prevents tracking attacks
+    pub encrypted_pool_state: Vec<u8>,
+    pub pool_state_commitment: [u8; 32],  // SHA-256 verification hash
+
+    // === Risk Parameters (Public for transparency) ===
+    pub ltv: u16,                    // 80% = 8000
+    pub liquidation_threshold: u16,  // 85% = 8500
+    pub liquidation_bonus: u16,      // 5% = 500
+    pub fixed_borrow_rate: u64,      // 5% APY = 500 bps
+
+    // === Vault Tracking ===
+    pub vault_nonce: u128,           // Deposit tracking (u128 for future protection)
+    pub last_update_ts: i64,
+    pub bump: u8,
+}
+
+// Plaintext structure encrypted in encrypted_pool_state
+pub struct PoolState {
     pub total_deposits: u128,
     pub total_borrows: u128,
     pub accumulated_interest: u128,
-
-    // Interest Rate Model
-    pub utilization_rate: u64,       // 0-100000 (0-100%)
-    pub current_borrow_rate: u64,    // APY in basis points
-    pub base_rate: u64,              // 2% = 200
-    pub optimal_utilization: u64,    // 80% = 80000
-
-    // Risk Parameters
-    pub liquidation_threshold: u16,  // 80% = 8000
-    pub liquidation_bonus: u16,      // 5% = 500
-
-    // Arcium Integration
-    pub arcium_config: Pubkey,
-    pub last_update_ts: i64,
+    pub available_borrow_liquidity: u128,
 }
 ```
 
-### User Obligation Account
+### User Obligation Account (Confidential)
 
 **PDA Seeds**: `["obligation", user.key(), pool.key()]`  
-**Size**: ~280 bytes | **Rent**: 0.00284 SOL (~$0.43)
+**Size**: ~320 bytes | **Rent**: 0.00310 SOL (~$0.47)
 
 ```rust
 pub struct UserObligation {
     pub user: Pubkey,
     pub pool: Pubkey,
 
-    // Encrypted State (only MXE can decrypt)
-    pub encrypted_state_blob: Vec<u8>,  // Enc<UserState>
-    pub state_commitment: [u8; 32],     // SHA-256(encrypted_blob)
+    // === Encrypted State (Enc<Shared, UserState>) ===
+    // User can decrypt with their private key
+    pub encrypted_state_blob: Vec<u8>,
+    pub state_commitment: [u8; 32],     // SHA-256 verification hash
 
-    // Attestation Record
-    pub last_mxe_attestation: Option<Attestation>,
-    pub state_nonce: u64,               // Replay protection
+    // === Two-Phase Deposit Tracking ===
+    pub total_funded: u64,              // Cumulative tokens funded (visible)
+    pub total_claimed: u64,             // Cumulative tokens claimed (visible)
+
+    // === Withdrawal State ===
+    pub has_pending_withdrawal: bool,
+    pub withdrawal_request_ts: i64,
+
+    // === Replay Protection ===
+    pub state_nonce: u128,              // u128 for future protection
     pub last_update_ts: i64,
+    pub bump: u8,
 }
 
-// Plaintext structure (encrypted in blob)
-struct UserState {
-    pub deposit_amount: u128,           // Hidden
-    pub borrow_amount: u128,            // Hidden
-    pub accrued_interest: u128,         // Hidden
+// Plaintext structure (encrypted in blob, user can decrypt)
+pub struct UserState {
+    pub deposit_amount: u128,           // Hidden from observers
+    pub borrow_amount: u128,            // Hidden from observers
+    pub accrued_interest: u128,         // Hidden from observers
     pub last_interest_calc_ts: i64,
 }
 ```
@@ -206,11 +225,21 @@ struct MxeNodeInfo {
 
 ## 4. Core Operations
 
-### A. Deposit
+### A. Deposit (Two-Phase Confidential Model)
 
-**Theory**: User locks collateral into the protocol. Balance encrypted on-chain; only pool total increases publicly.
+**Theory**: Deposit is split into two phases to decouple visible funding from hidden balance credits.
 
-**Math**: `new_deposit = old_deposit + amount`
+**Phase 1 - Fund Account** (Visible):
+- User transfers tokens to vault via SPL
+- `total_funded` incremented (visible on-chain)
+- Amount IS visible but decoupled from balance
+
+**Phase 2 - Credit Balance** (Hidden):
+- User calls deposit with encrypted amount
+- MXE verifies: `encrypted_amount <= (total_funded - total_credited)`
+- User's encrypted balance updated (HIDDEN)
+- Pool's encrypted TVL updated (HIDDEN)
+- Only success flag emitted (NO amount)
 
 **Flow**:
 
@@ -220,19 +249,24 @@ sequenceDiagram
     participant S as Solana
     participant M as Arcium MXE
 
-    U->>S: deposit(encrypted_request)
-    S->>S: Verify signature + create/fetch PDA
-    S->>M: CPI: execute_mxe()
-    M->>M: Decrypt request in TEE
-    M->>M: Update balance privately
-    M->>M: Generate attestation
-    M->>S: Return (attestation, encrypted_state)
-    S->>S: Verify attestation (Ed25519 + MRENCLAVE)
-    S->>S: Update encrypted_blob + pool.total_deposits
-    S->>U: Success
+    Note over U,M: Phase 1: Fund (Visible)
+    U->>S: fund_account(1000 SOL)
+    S->>S: SPL Transfer: user → vault
+    S->>S: total_funded += 1000
+    S->>U: AccountFunded { amount: 1000 }
+
+    Note over U,M: Phase 2: Credit (Hidden)
+    U->>S: deposit(encrypted_amount)
+    S->>M: compute_confidential_deposit()
+    M->>M: Decrypt & verify amount <= max_creditable
+    M->>M: Update encrypted user_state.deposit_amount
+    M->>M: Update encrypted pool_state.total_deposits
+    M->>S: (Enc<UserState>, Enc<PoolState>, success)
+    S->>S: Update encrypted blobs
+    S->>U: DepositCompleted { success } (NO amount)
 ```
 
-**Privacy**: Individual deposit amount hidden; only pool aggregate public.
+**Privacy**: Credit amount and new balance completely hidden. Only fund transfer amount visible (trade-off).
 
 ---
 

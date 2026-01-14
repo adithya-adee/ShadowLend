@@ -254,7 +254,7 @@ async function initializePool(
 /**
  * Initializes the compute_deposit computation definition with Arcium MXE
  */
-async function initComputeDepositCompDef(
+async function initComputeConfidentialDepositCompDef(
   program: Program<ShadowlendProgram>,
   owner: Keypair,
   finalize: boolean = true
@@ -263,14 +263,14 @@ async function initComputeDepositCompDef(
   const baseSeedCompDefAcc = getArciumAccountBaseSeed(
     "ComputationDefinitionAccount"
   );
-  const offset = getCompDefAccOffset("compute_deposit");
+  const offset = getCompDefAccOffset("compute_confidential_deposit");
 
   const compDefPDA = PublicKey.findProgramAddressSync(
     [baseSeedCompDefAcc, program.programId.toBuffer(), offset],
     getArciumProgramId()
   )[0];
 
-  console.log("Compute deposit comp def PDA:", compDefPDA.toString());
+  console.log("Compute confidential deposit comp def PDA:", compDefPDA.toString());
 
   const sig = await program.methods
     .initComputeDepositCompDef()
@@ -282,7 +282,7 @@ async function initComputeDepositCompDef(
     .signers([owner])
     .rpc({ commitment: "confirmed" });
 
-  console.log("Init compute_deposit comp def tx:", sig);
+  console.log("Init compute_confidential_deposit comp def tx:", sig);
 
   if (finalize) {
     const finalizeTx = await buildFinalizeCompDefTx(
@@ -297,7 +297,7 @@ async function initComputeDepositCompDef(
 
     finalizeTx.sign(owner);
     await provider.sendAndConfirm(finalizeTx);
-    console.log("Finalized compute_deposit comp def");
+    console.log("Finalized compute_confidential_deposit comp def");
   }
 
   return sig;
@@ -422,8 +422,6 @@ describe("ShadowLend Protocol Tests", () => {
       expect(poolAccount.liquidationThreshold).to.equal(liquidationThreshold);
       expect(poolAccount.liquidationBonus).to.equal(liquidationBonus);
       expect(poolAccount.fixedBorrowRate.toNumber()).to.equal(fixedBorrowRate);
-      expect(poolAccount.totalDeposits.toString()).to.equal("0");
-      expect(poolAccount.totalBorrows.toString()).to.equal("0");
 
       console.log("✅ Pool initialized successfully with correct parameters");
     });
@@ -545,7 +543,7 @@ describe("ShadowLend Protocol Tests", () => {
       console.log("Pool initialized for deposit test");
 
       // Initialize compute_deposit comp def
-      await initComputeDepositCompDef(program, owner);
+      await initComputeConfidentialDepositCompDef(program, owner);
       console.log("Compute deposit comp def initialized");
 
       // Create encryption context
@@ -581,7 +579,6 @@ describe("ShadowLend Protocol Tests", () => {
         .deposit(
           computationOffset,
           Array.from(encryptedAmount) as number[],
-          Array.from(encryptedState) as number[],
           Array.from(publicKey) as number[],
           new BN(deserializeLE(nonce).toString())
         )
@@ -599,7 +596,7 @@ describe("ShadowLend Protocol Tests", () => {
           executingPool: getExecutingPoolAccAddress(arciumEnv.arciumClusterOffset),
           compDefAccount: getCompDefAccAddress(
             program.programId,
-            Buffer.from(getCompDefAccOffset("compute_deposit")).readUInt32LE()
+            Buffer.from(getCompDefAccOffset("compute_confidential_deposit")).readUInt32LE()
           ),
         })
         .signers([owner])
@@ -647,7 +644,7 @@ describe("ShadowLend Protocol Tests", () => {
       await initializePool(program, owner, collateralMint, borrowMint);
 
       // Initialize compute_deposit comp def
-      await initComputeDepositCompDef(program, owner);
+      await initComputeConfidentialDepositCompDef(program, owner);
 
       // Create encryption context
       const { publicKey, cipher } = await createEncryptionContext(
@@ -711,7 +708,7 @@ describe("ShadowLend Protocol Tests", () => {
 
       // Initialize pool
       await initializePool(program, owner, collateralMint, borrowMint);
-      await initComputeDepositCompDef(program, owner);
+      await initComputeConfidentialDepositCompDef(program, owner);
 
       // Create encryption context
       const { publicKey, cipher } = await createEncryptionContext(
@@ -747,7 +744,6 @@ describe("ShadowLend Protocol Tests", () => {
         .deposit(
           computationOffset,
           Array.from(encryptedAmount) as number[],
-          Array.from(encryptedState) as number[],
           Array.from(publicKey) as number[],
           new BN(deserializeLE(nonce).toString())
         )
@@ -765,7 +761,7 @@ describe("ShadowLend Protocol Tests", () => {
           executingPool: getExecutingPoolAccAddress(arciumEnv.arciumClusterOffset),
           compDefAccount: getCompDefAccAddress(
             program.programId,
-            Buffer.from(getCompDefAccOffset("compute_deposit")).readUInt32LE()
+            Buffer.from(getCompDefAccOffset("compute_confidential_deposit")).readUInt32LE()
           ),
         })
         .signers([owner])

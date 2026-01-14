@@ -88,6 +88,19 @@ pub mod shadowlend_program {
     }
 
     // ============================================================
+    // User Instructions - Fund Account (Two-Phase Deposit)
+    // ============================================================
+
+    /// Fund user's account by transferring tokens to vault
+    /// 
+    /// TWO-PHASE DEPOSIT MODEL:
+    /// - Phase 1 (this): Token transfer (amount IS visible)
+    /// - Phase 2 (deposit): Encrypted balance credit (amount HIDDEN)
+    pub fn fund_account(ctx: Context<FundAccount>, amount: u64) -> Result<()> {
+        instructions::fund::fund_account_handler(ctx, amount)
+    }
+
+    // ============================================================
     // User Instructions - Deposit
     // ============================================================
 

@@ -79,17 +79,85 @@ encrypted-ixs/src/lib.rs    # Arcis circuits (#[instruction])
 
 ## 3. Circuit Design (encrypted-ixs)
 
-### Privacy Model (MVP)
+### Privacy Model (Fully Confidential - Current)
 
-| Data | Privacy | Notes |
-|------|---------|-------|
-| User's aggregate state (deposits, borrows) | **Private** | Encrypted, stored on-chain |
-| Health factor calculation | **Private** | Computed inside MXE |
-| Transaction amounts | **Public** | Revealed for SPL token transfer |
+| Data | Privacy | Encryption | Notes |
+|------|---------|------------|-------|
+| User deposits/borrows | **Private** | `Enc<Shared, UserState>` | User can decrypt with private key |
+| Pool aggregates (TVL) | **Private** | `Enc<Mxe, PoolState>` | Only MXE can decrypt |
+| Health factor | **Private** | Computed inside MXE | Never revealed |
+| Transaction amounts | **Hidden** | Not in events/logs | Only success flags emitted |
+| Fund transfers | **Visible** | SPL transfer | Trade-off for two-phase model |
+| Liquidation amounts | **Visible** | Protocol safety | Necessary for liquidators |
 
-> **Future**: When Arcium releases C-SPL (Confidential SPL), transaction amounts can also be private.
+> **Two-Phase Deposit Model**: Users call `fund_account(amount)` (visible SPL transfer) then `deposit(encrypted_amount)` (hidden credit). This decouples visible funding from hidden balance updates.
 
-### Template with .reveal()
+### Confidential Circuit Template
+
+```rust
+use arcis_imports::*;
+
+#[encrypted]
+mod circuits {
+    use arcis_imports::*;
+
+    // User state (user can decrypt)
+    pub struct UserState {
+        pub deposit_amount: u128,
+        pub borrow_amount: u128,
+        pub accrued_interest: u128,
+        pub last_interest_calc_ts: i64,
+    }
+
+    // Pool state (only MXE can decrypt)
+    pub struct PoolState {
+        pub total_deposits: u128,
+        pub total_borrows: u128,
+        pub accumulated_interest: u128,
+        pub available_borrow_liquidity: u128,
+    }
+
+    // Output struct - only reveals success flag
+    pub struct ConfidentialDepositOutput {
+        pub new_user_state: UserState,  // Encrypted
+        pub success: bool,               // Revealed
+    }
+
+    #[instruction]
+    pub fn compute_confidential_deposit(
+        amount_ctxt: Enc<Shared, u64>,
+        current_user_state: Enc<Shared, UserState>,
+        current_pool_state: Enc<Mxe, PoolState>,
+        max_creditable: u64,
+    ) -> (Enc<Shared, ConfidentialDepositOutput>, Enc<Mxe, PoolState>) {
+        let amount = amount_ctxt.to_arcis();
+        let mut user_state = current_user_state.to_arcis();
+        let mut pool_state = current_pool_state.to_arcis();
+
+        // Verify user isn't crediting more than funded
+        let valid_amount = amount <= max_creditable;
+        let effective_credit = (valid_amount as u128) * (amount as u128);
+
+        // Update states
+        user_state.deposit_amount = user_state.deposit_amount + effective_credit;
+        pool_state.total_deposits = pool_state.total_deposits + effective_credit;
+
+        let output = ConfidentialDepositOutput {
+            new_user_state: user_state,
+            success: valid_amount,
+        };
+
+        (
+            amount_ctxt.owner.from_arcis(output),
+            Mxe::get().from_arcis(pool_state),
+        )
+    }
+}
+```
+
+### Legacy Template with .reveal() (Deprecated)
+
+> **Note**: The `.reveal()` pattern is deprecated in favor of fully confidential circuits. Use only for backwards compatibility.
 
 ```rust
 use arcis_imports::*;
@@ -890,7 +958,86 @@ constraint = token_account.owner == user.key() @ ErrorCode::Unauthorized
 
 ---
 
-## 10. Checklist for New Instructions
+## 10. Two-Phase Deposit Model (Confidential)
+
+### Architecture
+
+The two-phase deposit model separates visible token transfers from hidden balance credits:
+
+```
+Phase 1: fund_account(amount)
+  ├─ SPL Transfer: user → vault (amount VISIBLE)
+  ├─ Update: user_obligation.total_funded += amount
+  └─ Emit: AccountFunded { amount, total_funded }
+
+Phase 2: deposit(encrypted_amount)
+  ├─ MXE Circuit: compute_confidential_deposit()
+  ├─ Verify: encrypted_amount <= (total_funded - total_credited)
+  ├─ Update: encrypted user_state.deposit_amount (HIDDEN)
+  ├─ Update: encrypted pool_state.total_deposits (HIDDEN)
+  └─ Emit: DepositCompleted { success } (NO amount)
+```
+
+### State Structure Updates
+
+#### Pool Account
+
+```rust
+pub struct Pool {
+    // ... existing fields ...
+    
+    /// Encrypted pool aggregates (Enc<Mxe, PoolState>)
+    pub encrypted_pool_state: Vec<u8>,
+    
+    /// SHA-256 commitment for pool state verification
+    pub pool_state_commitment: [u8; 32],
+    
+    /// Vault nonce for deposit tracking (u128 for future protection)
+    pub vault_nonce: u128,
+}
+
+pub struct PoolState {
+    pub total_deposits: u128,
+    pub total_borrows: u128,
+    pub accumulated_interest: u128,
+    pub available_borrow_liquidity: u128,
+}
+```
+
+#### UserObligation Account
+
+```rust
+pub struct UserObligation {
+    // ... existing fields ...
+    
+    /// Total tokens user has funded (cumulative, visible)
+    pub total_funded: u64,
+    
+    /// Total tokens user has claimed (cumulative, visible)
+    pub total_claimed: u64,
+    
+    /// Pending withdrawal state
+    pub has_pending_withdrawal: bool,
+    pub withdrawal_request_ts: i64,
+    
+    /// State nonce (u128 for future protection)
+    pub state_nonce: u128,
+}
+```
+
+### Privacy Trade-offs
+
+| Action | Visible | Hidden |
+|--------|---------|--------|
+| `fund_account` | Transfer amount | - |
+| `deposit` | Success flag | Credit amount, new balance |
+| `borrow` | Approval flag | Borrow amount, health factor |
+| `withdraw` | Approval flag | Withdraw amount |
+| `liquidate` | Amounts | - (safety requirement) |
+
+---
+
+## 11. Checklist for New Instructions
 
 ### Before Starting
 

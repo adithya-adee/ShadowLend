@@ -4,6 +4,9 @@ use anchor_spl::token::{self, Transfer};
 use super::accounts::FundAccount;
 use crate::error::ErrorCode;
 
+/// Minimum funding amount to prevent dust attacks (1000 lamports = 0.000001 SOL)
+pub const MIN_FUND_AMOUNT: u64 = 1000;
+
 /// Fund user's account by transferring tokens to vault
 /// 
 /// TWO-PHASE DEPOSIT MODEL:
@@ -18,7 +21,7 @@ pub fn fund_account_handler(
     ctx: Context<FundAccount>,
     amount: u64,
 ) -> Result<()> {
-    require!(amount > 0, ErrorCode::InvalidDepositAmount);
+    require!(amount >= MIN_FUND_AMOUNT, ErrorCode::InvalidDepositAmount);
 
     // Transfer tokens from user to vault
     let transfer_accounts = Transfer {

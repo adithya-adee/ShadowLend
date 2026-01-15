@@ -6,14 +6,24 @@ use super::callback::ComputeConfidentialBorrowCallback;
 use crate::constants::{SOL_PRICE_CENTS, USDC_PRICE_CENTS};
 use crate::error::ErrorCode;
 
-/// Queue borrow computation to Arcium MXE
-/// Token transfer happens in callback after verification
+/// Handles borrow instruction by queuing MXE computation for health factor verification.
+///
+/// # Flow
+/// 1. Validate encrypted amount is non-zero
+/// 2. Verify user has existing collateral (encrypted state exists)
+/// 3. Queue confidential computation with encrypted borrow amount
+/// 4. MXE verifies HF >= 1.0 and returns approval + revealed amount
+///
+/// # Arguments
+/// * `encrypted_amount` - User-encrypted borrow amount (Enc<Shared, u64>)
+/// * `pub_key` - User's x25519 public key for decryption
+/// * `nonce` - Encryption nonce for the encrypted amount
 pub fn borrow_handler(
     ctx: Context<Borrow>,
     computation_offset: u64,
-    encrypted_amount: [u8; 32], // Enc<Shared, u128>
-    pub_key: [u8; 32],          // User's x25519 public key
-    nonce: u128,                // Encryption nonce
+    encrypted_amount: [u8; 32],
+    pub_key: [u8; 32],
+    nonce: u128,
 ) -> Result<()> {
     require!(
         encrypted_amount != [0u8; 32],

@@ -6,8 +6,17 @@ use super::accounts::Deposit;
 use super::callback::ComputeConfidentialDepositCallback;
 use crate::error::ErrorCode;
 
-/// Queue deposit computation to Arcium MXE
-/// Token transfer happens in callback after verification
+/// Handles deposit instruction by performing SPL transfer and queuing MXE computation.
+///
+/// # Flow
+/// 1. Validate amount > 0
+/// 2. Initialize user obligation if first deposit
+/// 3. Transfer tokens from user to collateral vault
+/// 4. Queue confidential computation to update encrypted balances
+///
+/// # Arguments
+/// * `computation_offset` - Unique offset for this computation
+/// * `amount` - Plaintext deposit amount (visible in SPL transfer)
 pub fn deposit_handler(
     ctx: Context<Deposit>,
     computation_offset: u64,
@@ -31,9 +40,7 @@ pub fn deposit_handler(
 
     ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
 
-    // 1. Perform Public SPL Transfer (Atomic Deposit)
-    // Transfer tokens from user to vault NOW.
-    // This serves as proof-of-funds for the circuit.
+    // Transfer tokens from user to collateral vault (public SPL transfer)
     let transfer_accounts = token::Transfer {
         from: ctx.accounts.user_token_account.to_account_info(),
         to: ctx.accounts.collateral_vault.to_account_info(),
@@ -44,8 +51,7 @@ pub fn deposit_handler(
         amount,
     )?;
 
-    // 2. Read encrypted state
-    // Read user state
+    // Load encrypted user state (zero if first deposit)
     let encrypted_user_state: [u8; 64] = if user_obligation.encrypted_state_blob.is_empty() {
         [0u8; 64]
     } else {
@@ -55,7 +61,7 @@ pub fn deposit_handler(
         state_arr
     };
 
-    // Read pool state (MXE only)
+    // Load encrypted pool state
     let pool = &ctx.accounts.pool;
     let encrypted_pool_state: [u8; 64] = if pool.encrypted_pool_state.is_empty() {
          [0u8; 64]
@@ -66,7 +72,7 @@ pub fn deposit_handler(
         state_arr
     };
 
-    // 3. Build args for Atomic Deposit (Plaintext Amount)
+    // Build computation arguments
     let args = ArgBuilder::new()
         .plaintext_u64(amount) 
         .encrypted_u128(encrypted_user_state[0..32].try_into().unwrap())

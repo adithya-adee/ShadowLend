@@ -96,17 +96,9 @@ pub fn deposit_callback_handler(
         .collect();
     user_obligation.encrypted_state_blob = state_ciphertexts;
 
-    // Compute keccak256 commitment of encrypted state (cryptographically secure)
+    // Compute keccak256 commitment of encrypted state
     let commitment = hashv(&[&user_obligation.encrypted_state_blob]);
     user_obligation.state_commitment = commitment.to_bytes();
-    
-    // Note: total_funded is no longer tracked separately in atomic model
-    // but we can increment it if we want to track public "total deposited ever"
-    // For now, let's leave it or remove it. Better to keep it consistent if needed.
-    // However, since we don't have the amount here (it was in the handler), we can't update it easily
-    // unless the circuit reveals it back, which is redundant.
-    // Let's just track last update.
-    user_obligation.last_update_ts = Clock::get()?.unix_timestamp;
     user_obligation.last_update_ts = Clock::get()?.unix_timestamp;
 
     let pool = &mut ctx.accounts.pool;

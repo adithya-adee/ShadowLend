@@ -3,9 +3,12 @@
   "scripts": {
     "lint:fix": "prettier */*.js \"*/**/*{.js,.ts}\" -w",
     "lint": "prettier */*.js \"*/**/*{.js,.ts}\" --check",
+    "deploy": "ANCHOR_PROVIDER_URL=https://api.devnet.solana.com ts-node scripts/deploy-devnet.ts",
+    "setup-user": "ANCHOR_PROVIDER_URL=https://api.devnet.solana.com ts-node scripts/setup-user.ts",
+    "verify": "ANCHOR_PROVIDER_URL=https://api.devnet.solana.com ts-node scripts/verify-deployment.ts",
     "init-pool": "ts-node scripts/initialize-pool.ts",
-    "init-comp-defs": "ts-node scripts/init-comp-defs.ts",
-    "setup": "ts-node scripts/init-comp-defs.ts && ts-node scripts/initialize-pool.ts"
+    "init-comp": "ts-node scripts/init-comp-defs.ts",
+    "deploy:local": "ts-node scripts/deploy-devnet.ts"
   },
   "dependencies": {
     "@arcium-hq/client": "0.5.4",

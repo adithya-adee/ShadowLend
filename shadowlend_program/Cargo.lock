@@ -3385,6 +3385,7 @@ dependencies = [
  "arcium-client",
  "arcium-macros",
  "blake3",
+ "solana-keccak-hasher",
 ]
 
 [[package]]

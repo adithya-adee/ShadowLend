@@ -5,6 +5,7 @@ use crate::error::ErrorCode;
 use crate::state::{Pool, UserObligation};
 use crate::ID;
 use arcium_client::idl::arcium::ID_CONST;
+use solana_keccak_hasher::hashv;
 
 const COMP_DEF_OFFSET: u32 = comp_def_offset("compute_confidential_repay");
 
@@ -96,11 +97,9 @@ pub fn repay_callback_handler(
         .collect();
     user_obligation.encrypted_state_blob = state_ciphertexts;
 
-    let mut commitment = [0u8; 32];
-    for (i, byte) in user_obligation.encrypted_state_blob.iter().enumerate() {
-        commitment[i % 32] ^= byte;
-    }
-    user_obligation.state_commitment = commitment;
+    // Compute keccak256 commitment of encrypted state (cryptographically secure)
+    let commitment = hashv(&[&user_obligation.encrypted_state_blob]);
+    user_obligation.state_commitment = commitment.to_bytes();
     user_obligation.last_update_ts = Clock::get()?.unix_timestamp;
 
     let pool = &mut ctx.accounts.pool;

@@ -19,7 +19,7 @@ pub struct FundAccount<'info> {
     /// The lending pool
     #[account(
         mut,
-        seeds = [Pool::SEED_PREFIX, pool.collateral_mint.as_ref()],
+        seeds = [Pool::SEED_PREFIX, pool.collateral_mint.as_ref(), pool.borrow_mint.as_ref()],
         bump = pool.bump
     )]
     pub pool: Box<Account<'info, Pool>>,
@@ -48,7 +48,7 @@ pub struct FundAccount<'info> {
     /// Pool's collateral vault (receives tokens)
     #[account(
         mut,
-        seeds = [b"vault", collateral_mint.key().as_ref(), b"collateral"],
+        seeds = [b"vault", collateral_mint.key().as_ref(), pool.borrow_mint.as_ref(), b"collateral"],
         bump,
         token::mint = collateral_mint,
         token::authority = pool,

@@ -1,7 +1,9 @@
 use anchor_lang::prelude::*;
 
 /// Pool account - stores lending pool configuration and aggregates
-/// Seeds: ["pool", collateral_mint.key()]
+/// Seeds: ["pool", collateral_mint.key(), borrow_mint.key()]
+///
+/// MULTI-POOL SUPPORT: Each unique (collateral, borrow) pair has its own pool.
 ///
 /// CONFIDENTIAL DESIGN:
 /// - Pool aggregates are now encrypted with Enc<Mxe, PoolState>

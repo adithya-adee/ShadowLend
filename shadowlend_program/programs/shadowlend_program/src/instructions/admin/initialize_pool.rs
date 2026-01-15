@@ -21,7 +21,7 @@ pub struct InitializePool<'info> {
         init,
         payer = authority,
         space = 8 + Pool::INIT_SPACE,
-        seeds = [Pool::SEED_PREFIX, collateral_mint.key().as_ref()],
+        seeds = [Pool::SEED_PREFIX, collateral_mint.key().as_ref(), borrow_mint.key().as_ref()],
         bump,
     )]
     pub pool: Box<Account<'info, Pool>>,
@@ -36,7 +36,7 @@ pub struct InitializePool<'info> {
     #[account(
         init,
         payer = authority,
-        seeds = [b"vault", collateral_mint.key().as_ref(), b"collateral"],
+        seeds = [b"vault", collateral_mint.key().as_ref(), borrow_mint.key().as_ref(), b"collateral"],
         bump,
         token::mint = collateral_mint,
         token::authority = pool,
@@ -47,7 +47,7 @@ pub struct InitializePool<'info> {
     #[account(
         init,
         payer = authority,
-        seeds = [b"vault", collateral_mint.key().as_ref(), b"borrow"],
+        seeds = [b"vault", collateral_mint.key().as_ref(), borrow_mint.key().as_ref(), b"borrow"],
         bump,
         token::mint = borrow_mint,
         token::authority = pool,

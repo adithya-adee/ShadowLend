@@ -18,7 +18,7 @@ pub struct Withdraw<'info> {
     pub payer: Signer<'info>,
 
     #[account(
-        seeds = [Pool::SEED_PREFIX, pool.collateral_mint.as_ref()],
+        seeds = [Pool::SEED_PREFIX, pool.collateral_mint.as_ref(), pool.borrow_mint.as_ref()],
         bump = pool.bump
     )]
     pub pool: Box<Account<'info, Pool>>,

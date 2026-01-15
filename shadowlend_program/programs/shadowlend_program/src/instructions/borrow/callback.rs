@@ -33,7 +33,7 @@ pub struct ComputeConfidentialBorrowCallback<'info> {
 
     #[account(
         mut,
-        seeds = [Pool::SEED_PREFIX, pool.collateral_mint.as_ref()],
+        seeds = [Pool::SEED_PREFIX, pool.collateral_mint.as_ref(), pool.borrow_mint.as_ref()],
         bump = pool.bump
     )]
     pub pool: Box<Account<'info, Pool>>,
@@ -56,7 +56,7 @@ pub struct ComputeConfidentialBorrowCallback<'info> {
 
     #[account(
         mut,
-        seeds = [b"vault", pool.collateral_mint.as_ref(), b"borrow"],
+        seeds = [b"vault", pool.collateral_mint.as_ref(), pool.borrow_mint.as_ref(), b"borrow"],
         bump,
         token::mint = borrow_mint,
         token::authority = pool,
@@ -127,9 +127,11 @@ pub fn borrow_callback_handler(
 
     // Transfer tokens from vault to user
     let collateral_mint = ctx.accounts.pool.collateral_mint;
+    let borrow_mint = ctx.accounts.pool.borrow_mint;
     let seeds = &[
         Pool::SEED_PREFIX,
         collateral_mint.as_ref(),
+        borrow_mint.as_ref(),
         &[ctx.accounts.pool.bump],
     ];
     let signer_seeds = &[&seeds[..]];

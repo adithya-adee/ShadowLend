@@ -19,7 +19,7 @@ pub struct Repay<'info> {
     pub payer: Signer<'info>,
 
     #[account(
-        seeds = [Pool::SEED_PREFIX, pool.collateral_mint.as_ref()],
+        seeds = [Pool::SEED_PREFIX, pool.collateral_mint.as_ref(), pool.borrow_mint.as_ref()],
         bump = pool.bump
     )]
     pub pool: Box<Account<'info, Pool>>,
@@ -45,7 +45,7 @@ pub struct Repay<'info> {
 
     #[account(
         mut,
-        seeds = [b"vault", pool.collateral_mint.as_ref(), b"borrow"],
+        seeds = [b"vault", pool.collateral_mint.as_ref(), pool.borrow_mint.as_ref(), b"borrow"],
         bump,
         token::mint = borrow_mint,
         token::authority = pool,

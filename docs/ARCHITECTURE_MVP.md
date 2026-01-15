@@ -682,3 +682,33 @@ ShadowLend V1 achieves **privacy-preserving lending** in 3 weeks using:
 - ✅ Atomic operations prevent stuck funds
 
 **Next Steps**: Build the Solana program → Integrate Arcium SDK → Ship demo 🚀
+
+
+## What is private VS public?
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                         WHAT AN OBSERVER CAN SEE                                │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                 │
+│  Timeline of Alice's transactions (ALL PUBLIC):                                 │
+│                                                                                 │
+│  Block 100:  Alice → Pool Vault:    +100 SOL  (deposit)                         │
+│  Block 150:  Alice → Pool Vault:    +50 SOL   (deposit)                         │
+│  Block 200:  Pool Vault → Alice:    +2000 USDC (borrow - amount revealed)       │
+│  Block 250:  Alice → Pool Vault:    +500 USDC (repay)                           │
+│  Block 300:  Pool Vault → Alice:    +30 SOL   (withdraw - amount revealed)      │
+│                                                                                 │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                       WHAT AN OBSERVER CANNOT DEDUCE                            │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                 │
+│  ❌ Current SOL balance:         Could be 120 SOL, or less if liquidated        │
+│  ❌ Current USDC debt:           Could be 1500 USDC, or more with interest      │
+│  ❌ Health Factor:               Is Alice at 5.0 (safe) or 1.05 (danger)?       │
+│  ❌ Liquidation threshold:       When will Alice get liquidated?                │
+│  ❌ Interest accrued:            How much interest has accumulated?             │
+│  ❌ Actual borrow capacity:      How much more can Alice borrow?                │
+│  ❌ Pool TVL:                    What's the total value locked?                 │
+│  ❌ Pool utilization:            What % of pool is being borrowed?              │
+│                                                                                 │
+└─────────────────────────────────────────────────────────────────────────────────┘

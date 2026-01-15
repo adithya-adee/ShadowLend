@@ -415,6 +415,21 @@ graph LR
     API -->|Fetch| Frontend[Frontend App]
 ```
 
+## What indexer should track
+For each operation:
+├── Queued event → Mark as "PENDING"
+├── Completed event → Mark as "CONFIRMED", link to Queued
+└── Timeout (no Completed after X blocks) → Mark as "FAILED"
+
+Transaction History:
+├── User: pubkey
+├── Pool: pubkey
+├── Type: deposit/borrow/withdraw/etc
+├── Status: pending/confirmed/failed
+├── Queued TX: signature
+├── Completed TX: signature (nullable)
+└── state_nonce: for ordering
+
 ### Indexed Events
 
 | Event Type       | Data Stored (Public)                         | Privacy                        |

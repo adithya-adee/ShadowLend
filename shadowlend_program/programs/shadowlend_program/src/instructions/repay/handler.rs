@@ -6,18 +6,24 @@ use super::accounts::Repay;
 use super::callback::ComputeConfidentialRepayCallback;
 use crate::error::ErrorCode;
 
-/// Queue repay computation to Arcium MXE
-/// Token transfer happens in callback after verification
+/// Handles repayment by transferring tokens and queuing MXE state update.
 ///
-/// Flow:
-/// 1. User encrypts repay amount client-side
-/// 2. Handler queues computation
-/// 3. MXE computes new borrow balance privately
-/// 4. Callback transfers tokens from user to vault
+/// Repayment priority: interest is paid first, then principal.
+/// The amount is visible (SPL transfer) but the resulting balances remain encrypted.
+///
+/// # Flow
+/// 1. Validate repay amount > 0
+/// 2. Transfer tokens from user to borrow vault
+/// 3. Queue confidential computation to update encrypted balances
+/// 4. MXE applies payment to interest first, then principal
+///
+/// # Arguments
+/// * `computation_offset` - Unique offset for this MXE computation
+/// * `amount` - Plaintext repayment amount (visible in SPL transfer)
 pub fn repay_handler(
     ctx: Context<Repay>,
     computation_offset: u64,
-    amount: u64,                // Plaintext amount for Atomic Repay
+    amount: u64,
 ) -> Result<()> {
     // Validate repay amount
     require!(amount > 0, ErrorCode::InvalidBorrowAmount);

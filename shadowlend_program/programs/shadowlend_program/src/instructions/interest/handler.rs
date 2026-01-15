@@ -5,14 +5,19 @@ use super::accounts::UpdateInterest;
 use super::callback::ComputeConfidentialInterestCallback;
 use crate::error::ErrorCode;
 
-/// Queue interest accrual computation to Arcium MXE
-/// No token transfer - just updates encrypted state with accrued interest
+/// Handles interest accrual by queuing MXE computation.
 ///
-/// Flow:
-/// 1. Anyone can trigger interest update for a user
-/// 2. Handler queues computation with current timestamp and borrow rate
-/// 3. MXE computes accrued interest privately
-/// 4. Callback updates encrypted state and pool aggregates
+/// Anyone can trigger interest update for any user (permissionless).
+/// Interest is calculated based on time elapsed and the pool's fixed borrow rate.
+///
+/// # Flow
+/// 1. Verify user has existing borrow position
+/// 2. Queue confidential computation with current timestamp and rate
+/// 3. MXE calculates accrued interest privately
+/// 4. Callback updates encrypted user state and pool aggregates
+///
+/// # Arguments
+/// * `computation_offset` - Unique offset for this MXE computation
 pub fn update_interest_handler(
     ctx: Context<UpdateInterest>,
     computation_offset: u64,

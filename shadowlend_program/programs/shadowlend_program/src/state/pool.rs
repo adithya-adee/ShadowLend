@@ -1,14 +1,19 @@
+//! Pool Account
+//!
+//! Stores lending pool configuration and encrypted aggregate state.
+//! Each unique (collateral_mint, borrow_mint) pair has its own pool.
+
 use anchor_lang::prelude::*;
 
-/// Pool account - stores lending pool configuration and aggregates
-/// Seeds: ["pool", collateral_mint.key(), borrow_mint.key()]
+/// Lending pool account storing configuration and encrypted aggregates.
 ///
-/// MULTI-POOL SUPPORT: Each unique (collateral, borrow) pair has its own pool.
+/// # PDA Seeds
+/// `["pool", collateral_mint, borrow_mint]`
 ///
-/// CONFIDENTIAL DESIGN:
-/// - Pool aggregates are now encrypted with Enc<Mxe, PoolState>
-/// - Only MXE can decrypt totals - prevents TVL tracking attacks
-/// - Risk parameters remain public for transparency
+/// # Privacy Model
+/// - Pool aggregates (`total_deposits`, `total_borrows`) are encrypted with `Enc<Mxe, PoolState>`
+/// - Only MXE can decrypt totals, preventing TVL tracking attacks
+/// - Risk parameters (LTV, liquidation threshold) remain public for transparency
 #[account]
 #[derive(InitSpace)]
 pub struct Pool {
@@ -19,32 +24,29 @@ pub struct Pool {
     /// Borrow token mint (e.g., USDC)
     pub borrow_mint: Pubkey,
 
-    // === Encrypted Aggregates (only MXE can decrypt) ===
-    /// Encrypted pool state containing totals (Enc<Mxe, PoolState>)
-    /// Structure: { total_deposits, total_borrows, accumulated_interest, available_liquidity }
-    /// Max size: 128 bytes for encrypted pool state
+    // --- Encrypted Aggregates ---
+    /// Encrypted pool state containing totals (max 128 bytes)
     #[max_len(128)]
     pub encrypted_pool_state: Vec<u8>,
-    
-    /// SHA-256 commitment hash for encrypted pool state verification
+    /// Keccak256 commitment for encrypted state verification
     pub pool_state_commitment: [u8; 32],
 
-    // === Risk Parameters (remain public for transparency) ===
-    /// Loan-to-Value ratio (80% = 8000)
+    // --- Risk Parameters (Public) ---
+    /// Loan-to-Value ratio in basis points (80% = 8000)
     pub ltv: u16,
-    /// Liquidation threshold (85% = 8500)
+    /// Liquidation threshold in basis points (85% = 8500)
     pub liquidation_threshold: u16,
-    /// Liquidation bonus for liquidators (5% = 500)
+    /// Liquidation bonus for liquidators in basis points (5% = 500)
     pub liquidation_bonus: u16,
-    /// Fixed borrow rate in basis points (5% APY = 500)
+    /// Fixed borrow rate in basis points per year (5% APY = 500)
     pub fixed_borrow_rate: u64,
 
-    // === Vault Tracking ===
-    /// Nonce for tracking vault deposits (u128 for future protection)
+    // --- Vault Tracking ---
+    /// Nonce for tracking vault operations
     pub vault_nonce: u128,
 
-    // === Metadata ===
-    /// Last time pool was updated
+    // --- Metadata ---
+    /// Unix timestamp of last pool update
     pub last_update_ts: i64,
     /// PDA bump seed
     pub bump: u8,

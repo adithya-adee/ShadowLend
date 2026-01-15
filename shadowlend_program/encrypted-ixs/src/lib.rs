@@ -1,19 +1,21 @@
-/// ShadowLend Arcium Circuits (encrypted-ixs)
-///
-/// These circuits run inside Arcium MXE for confidential computation.
-/// Each circuit operates on encrypted user state and returns encrypted results.
-///
-/// Key Design Decisions:
-/// - Use Enc<Shared, T> for user-decryptable data (user can decrypt with private key)
-/// - Use Enc<Mxe, T> for protocol-only data (pool state, internal computations)
-/// - Fixed-size structs only (no Vec<T>)
-/// - Use .min() / .max() for saturating arithmetic (safe for MPC)
-/// - Boolean flags inside output structs (decrypted in callback)
-///
-/// CONFIDENTIAL TRANSACTION DESIGN:
-/// - Pool state is encrypted with Enc<Mxe, PoolState> - only protocol can decrypt
-/// - User state is encrypted with Enc<Shared, UserState> - user can decrypt
-/// - Outputs only reveal success/failure via struct bool fields
+//! ShadowLend Arcium Circuits
+//!
+//! Confidential computation circuits that run inside Arcium MXE (Multi-party eXecution Environment).
+//! These circuits operate on encrypted user and pool state to enable private lending operations.
+//!
+//! # Encryption Types
+//! - `Enc<Shared, T>` - User-decryptable data (user can decrypt with their private key)
+//! - `Enc<Mxe, T>` - Protocol-only data (only MXE nodes can decrypt)
+//!
+//! # Design Constraints
+//! - Fixed-size structs only (no `Vec<T>` in circuit types)
+//! - Use `.min()` / `.max()` for saturating arithmetic (safe for MPC)
+//! - Boolean approval flags are revealed in output structs
+//!
+//! # Privacy Guarantees
+//! - Individual balances remain encrypted
+//! - Health factor calculations happen privately
+//! - Only approved amounts are revealed for SPL transfers
 use arcis_imports::*;
 
 #[encrypted]
@@ -21,37 +23,41 @@ mod circuits {
     use arcis_imports::*;
 
     // ============================================================
-    // Common Types shared across circuits
+    // Shared Types
     // ============================================================
 
-    /// Encrypted user state stored on-chain
-    /// Uses fixed-size fields only (no Vec)
+    /// Encrypted user state stored on-chain.
+    ///
+    /// Contains the user's lending position within a pool.
+    /// Encrypted with `Enc<Shared, UserState>` so user can decrypt.
     pub struct UserState {
-        /// Collateral deposited (e.g., SOL in lamports)
+        /// Collateral deposited (in base units, e.g., lamports)
         pub deposit_amount: u128,
-        /// Amount borrowed (e.g., USDC in base units)
+        /// Principal amount borrowed (in base units)
         pub borrow_amount: u128,
-        /// Accrued interest on borrow
+        /// Accrued interest on outstanding borrow
         pub accrued_interest: u128,
-        /// Timestamp of last interest calculation
+        /// Unix timestamp of last interest calculation
         pub last_interest_calc_ts: i64,
     }
 
-    /// Encrypted pool state (MXE-only decryption)
-    /// Contains aggregate totals that should remain hidden
+    /// Encrypted pool state (MXE-only decryption).
+    ///
+    /// Contains aggregate totals that remain hidden from observers.
+    /// Prevents TVL tracking and front-running attacks.
     pub struct PoolState {
         /// Total collateral deposited across all users
         pub total_deposits: u128,
-        /// Total amount borrowed across all users
+        /// Total principal borrowed across all users
         pub total_borrows: u128,
-        /// Aggregate interest accumulated
+        /// Aggregate interest accumulated by protocol
         pub accumulated_interest: u128,
-        /// Available liquidity in borrow vault
+        /// Available liquidity for new borrows
         pub available_borrow_liquidity: u128,
     }
 
     // ============================================================
-    // CONFIDENTIAL Deposit Circuit (NEW - No Amount Revealed)
+    // Deposit Circuit
     // ============================================================
 
     /// Output from confidential deposit computation
@@ -94,7 +100,7 @@ mod circuits {
     }
 
     // ============================================================
-    // CONFIDENTIAL Borrow Circuit (NEW - No Amount Revealed)
+    // Borrow Circuit
     // ============================================================
 
     /// Output from confidential borrow computation
@@ -164,7 +170,7 @@ mod circuits {
     }
 
     // ============================================================
-    // CONFIDENTIAL Withdraw Circuit (NEW - No Amount Revealed)
+    // Withdraw Circuit
     // ============================================================
 
     /// Output from confidential withdraw computation
@@ -234,7 +240,7 @@ mod circuits {
     }
 
     // ============================================================
-    // CONFIDENTIAL Repay Circuit (NEW - No Amount Revealed)
+    // Repay Circuit
     // ============================================================
 
     /// Output from confidential repay computation
@@ -304,7 +310,7 @@ mod circuits {
     }
 
     // ============================================================
-    // CONFIDENTIAL Liquidate Circuit (NEW - No Amount Revealed)
+    // Liquidate Circuit
     // ============================================================
 
     /// Output from confidential liquidation computation
@@ -392,7 +398,7 @@ mod circuits {
     }
 
     // ============================================================
-    // CONFIDENTIAL Interest Circuit (NEW - No Amount Revealed)
+    // Interest Circuit
     // ============================================================
 
     /// Output from confidential interest computation

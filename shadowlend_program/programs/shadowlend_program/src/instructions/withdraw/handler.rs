@@ -6,20 +6,28 @@ use super::callback::ComputeConfidentialWithdrawCallback;
 use crate::constants::{SOL_PRICE_CENTS, USDC_PRICE_CENTS};
 use crate::error::ErrorCode;
 
-/// Queue withdraw computation to Arcium MXE
-/// Token transfer happens in callback after verification
+/// Handles withdrawal by queuing MXE computation for health factor verification.
 ///
-/// Flow:
-/// 1. User encrypts withdrawal amount client-side
-/// 2. Handler queues computation with prices and LTV
-/// 3. MXE computes health factor privately to verify safety
-/// 4. Callback checks approval and transfers tokens from vault to user
+/// The user's encrypted withdrawal amount is verified privately by MXE to ensure
+/// the position remains healthy after withdrawal.
+///
+/// # Flow
+/// 1. Validate encrypted amount is non-zero
+/// 2. Verify user has existing collateral
+/// 3. Queue confidential computation with encrypted amount
+/// 4. MXE verifies HF remains safe and returns revealed amount
+///
+/// # Arguments
+/// * `computation_offset` - Unique offset for this MXE computation
+/// * `encrypted_amount` - User-encrypted withdrawal amount (Enc<Shared, u64>)
+/// * `pub_key` - User's x25519 public key for decryption
+/// * `nonce` - Encryption nonce for the encrypted amount
 pub fn withdraw_handler(
     ctx: Context<Withdraw>,
     computation_offset: u64,
-    encrypted_amount: [u8; 32], // Enc<Shared, u128>
-    pub_key: [u8; 32],          // User's x25519 public key
-    nonce: u128,                // Encryption nonce
+    encrypted_amount: [u8; 32],
+    pub_key: [u8; 32],
+    nonce: u128,
 ) -> Result<()> {
     // Validate encrypted amount is not zero bytes
     require!(

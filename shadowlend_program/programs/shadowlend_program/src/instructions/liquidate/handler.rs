@@ -6,18 +6,24 @@ use super::callback::ComputeConfidentialLiquidateCallback;
 use crate::constants::{SOL_PRICE_CENTS, USDC_PRICE_CENTS};
 use crate::error::ErrorCode;
 
-/// Queue liquidation computation to Arcium MXE
-/// Token transfers happen in callback after verification
+/// Handles liquidation by queuing MXE computation to verify undercollateralization.
 ///
-/// Flow:
-/// 1. Liquidator specifies repay amount (plaintext - no need to encrypt)
-/// 2. Handler queues computation with prices, LTV, and liquidation params
-/// 3. MXE verifies HF < 1.0 privately [CRITICAL]
-/// 4. Callback transfers: liquidator repays debt, receives collateral + bonus
+/// MXE privately verifies the target position has HF < 1.0 before allowing liquidation.
+/// On success, liquidator repays debt and receives collateral + bonus.
+///
+/// # Flow
+/// 1. Validate repay amount > 0
+/// 2. Verify target user has existing position
+/// 3. Queue confidential computation with liquidation parameters
+/// 4. MXE verifies HF < 1.0 and calculates seized collateral
+///
+/// # Arguments
+/// * `computation_offset` - Unique offset for this MXE computation
+/// * `repay_amount` - Amount of borrow token to repay (plaintext)
 pub fn liquidate_handler(
     ctx: Context<Liquidate>,
     computation_offset: u64,
-    repay_amount: u64, // Plaintext - liquidator's repay amount in borrow token
+    repay_amount: u64,
 ) -> Result<()> {
     // Validate repay amount
     require!(repay_amount > 0, ErrorCode::InvalidBorrowAmount);

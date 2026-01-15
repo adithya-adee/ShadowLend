@@ -91,39 +91,17 @@ pub mod shadowlend_program {
     }
 
     // ============================================================
-    // User Instructions - Fund Account (Two-Phase Deposit)
+    // Deposit: Transfer collateral + update encrypted balance
     // ============================================================
 
-    /// Fund user's account by transferring tokens to vault
-    /// 
-    /// TWO-PHASE DEPOSIT MODEL:
-    /// - Phase 1 (this): Token transfer (amount IS visible)
-    /// - Phase 2 (deposit): Encrypted balance credit (amount HIDDEN)
-    pub fn fund_account(ctx: Context<FundAccount>, amount: u64) -> Result<()> {
-        instructions::fund::fund_account_handler(ctx, amount)
-    }
-
-    // ============================================================
-    // User Instructions - Deposit
-    // ============================================================
-
-    /// Queue a deposit computation to Arcium MXE
-    ///
-    /// Flow:
-    /// 1. User encrypts deposit amount client-side
-    /// 2. Handler queues computation to MXE
-    /// 3. MXE verifies and returns encrypted output
-    /// 4. Callback extracts deposit_delta and performs transfer
+    /// Deposit collateral into the pool.
+    /// Performs SPL transfer and queues MXE computation to update encrypted balance.
     pub fn deposit(
         ctx: Context<Deposit>,
         computation_offset: u64,
         amount: u64,
     ) -> Result<()> {
-        instructions::deposit::deposit_handler(
-            ctx,
-            computation_offset,
-            amount,
-        )
+        instructions::deposit::deposit_handler(ctx, computation_offset, amount)
     }
 
     /// Callback from Arcium MXE after deposit computation completes
@@ -136,16 +114,11 @@ pub mod shadowlend_program {
     }
 
     // ============================================================
-    // User Instructions - Borrow
+    // Borrow: Request USDC with private health factor check
     // ============================================================
 
-    /// Queue a borrow computation to Arcium MXE
-    ///
-    /// Flow:
-    /// 1. User encrypts borrow amount client-side
-    /// 2. Handler queues computation with prices and LTV
-    /// 3. MXE computes health factor privately
-    /// 4. Callback checks approval and performs transfer
+    /// Borrow tokens against deposited collateral.
+    /// MXE privately verifies health factor >= 1.0 before approval.
     pub fn borrow(
         ctx: Context<Borrow>,
         computation_offset: u64,
@@ -172,16 +145,11 @@ pub mod shadowlend_program {
     }
 
     // ============================================================
-    // User Instructions - Withdraw
+    // Withdraw: Reclaim collateral with private HF verification
     // ============================================================
 
-    /// Queue a withdraw computation to Arcium MXE
-    ///
-    /// Flow:
-    /// 1. User encrypts withdraw amount client-side
-    /// 2. Handler queues computation with prices and LTV
-    /// 3. MXE verifies health factor stays safe after withdrawal
-    /// 4. Callback checks approval and transfers collateral to user
+    /// Withdraw collateral from the pool.
+    /// MXE privately verifies health factor stays safe after withdrawal.
     pub fn withdraw(
         ctx: Context<Withdraw>,
         computation_offset: u64,
@@ -208,16 +176,11 @@ pub mod shadowlend_program {
     }
 
     // ============================================================
-    // User Instructions - Repay
+    // Repay: Reduce debt with private balance update
     // ============================================================
 
-    /// Queue a repay computation to Arcium MXE
-    ///
-    /// Flow:
-    /// 1. User encrypts repay amount client-side
-    /// 2. Handler queues computation
-    /// 3. MXE computes new borrow balance privately
-    /// 4. Callback transfers tokens from user to vault
+    /// Repay borrowed tokens to reduce debt.
+    /// Interest is paid first, then principal.
     pub fn repay(
         ctx: Context<Repay>,
         computation_offset: u64,
@@ -240,16 +203,11 @@ pub mod shadowlend_program {
     }
 
     // ============================================================
-    // Liquidator Instructions
+    // Liquidate: Repay undercollateralized debt + seize collateral
     // ============================================================
 
-    /// Queue a liquidation computation to Arcium MXE
-    ///
-    /// Flow:
-    /// 1. Liquidator specifies repay amount (plaintext)
-    /// 2. Handler queues computation with prices and liquidation params
-    /// 3. MXE verifies HF < 1.0 privately [CRITICAL]
-    /// 4. Callback transfers debt repayment and seizes collateral + bonus
+    /// Liquidate an undercollateralized position.
+    /// MXE privately verifies HF < 1.0 before allowing liquidation.
     pub fn liquidate(
         ctx: Context<Liquidate>,
         computation_offset: u64,
@@ -268,16 +226,11 @@ pub mod shadowlend_program {
     }
 
     // ============================================================
-    // Interest Accrual Instructions
+    // Interest: On-demand interest accrual
     // ============================================================
 
-    /// Queue an interest update computation to Arcium MXE
-    ///
-    /// Flow:
-    /// 1. Anyone can trigger interest update for any user
-    /// 2. Handler queues computation with current timestamp and rate
-    /// 3. MXE computes accrued interest privately
-    /// 4. Callback updates encrypted state and pool aggregates
+    /// Accrue interest on a user's borrow position.
+    /// Anyone can trigger; computed privately in MXE.
     pub fn update_interest(ctx: Context<UpdateInterest>, computation_offset: u64) -> Result<()> {
         instructions::interest::update_interest_handler(ctx, computation_offset)
     }

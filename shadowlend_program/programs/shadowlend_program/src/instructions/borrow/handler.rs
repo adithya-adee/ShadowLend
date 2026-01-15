@@ -49,6 +49,7 @@ pub fn borrow_handler(
     let ltv_bps = ctx.accounts.pool.ltv;
 
     // Build arguments for Arcium computation
+    // TODO: Add oracle pricing (either confidential / on chain)
     let args = ArgBuilder::new()
         .x25519_pubkey(pub_key)
         .plaintext_u128(nonce)

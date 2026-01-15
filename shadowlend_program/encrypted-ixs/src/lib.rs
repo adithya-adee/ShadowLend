@@ -445,29 +445,5 @@ mod circuits {
             Mxe::get().from_arcis(pool_state),
         )
     }
-
-    // ============================================================
-    // LEGACY CIRCUITS REMOVED
-    // ============================================================
-    //
-    // SECURITY AUDIT: The following legacy circuits were removed because
-    // they revealed transaction amounts in their outputs:
-    //
-    // - compute_deposit → revealed deposit_delta
-    // - compute_borrow → revealed borrow_delta  
-    // - compute_withdraw → revealed withdraw_delta
-    // - compute_repay → revealed repay_delta
-    // - compute_liquidate → revealed repay_delta, collateral_seized
-    // - compute_interest → revealed interest_accrued
-    //
-    // Use the confidential versions instead:
-    // - compute_confidential_deposit
-    // - compute_confidential_borrow
-    // - compute_confidential_withdraw
-    // - compute_confidential_repay
-    // - compute_confidential_liquidate
-    // - compute_confidential_interest
-    //
-    // These only reveal success/approval flags, never amounts.
 }
 

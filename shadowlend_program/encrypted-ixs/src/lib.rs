@@ -271,9 +271,12 @@ mod circuits {
         let interest_payment = actual_repay.min(user_state.accrued_interest);
         let new_interest = user_state.accrued_interest - interest_payment;
 
+        // OPTIMIZATION: No .min() needed for principal_payment
+        // Proof: actual_repay <= total_debt = borrow_amount + accrued_interest
+        //        interest_payment <= accrued_interest
+        //        => principal_payment = actual_repay - interest_payment <= borrow_amount
         let principal_payment = actual_repay - interest_payment;
-        let new_borrow = user_state.borrow_amount - 
-            principal_payment.min(user_state.borrow_amount);
+        let new_borrow = user_state.borrow_amount - principal_payment;
 
         // Update user state
         user_state.borrow_amount = new_borrow;
@@ -336,13 +339,14 @@ mod circuits {
         let total_borrow = user_state.borrow_amount + user_state.accrued_interest;
 
         // Check if liquidatable: HF < 1.0
+        // OPTIMIZATION: No separate has_borrow check needed
+        // Proof: If total_borrow = 0, then borrow_value = 0
+        //        collateral_with_threshold >= 0, so NOT under_collateralized
         let collateral_value = user_state.deposit_amount * (collateral_price as u128);
         let collateral_with_threshold = collateral_value * liquidation_threshold as u128;
         let borrow_value = total_borrow * (borrow_price as u128) * 10000;
 
-        let has_borrow = total_borrow > 0;
-        let under_collateralized = collateral_with_threshold < borrow_value;
-        let is_liquidatable = has_borrow && under_collateralized;
+        let is_liquidatable = collateral_with_threshold < borrow_value;
 
         // Only proceed if liquidatable
         let proceed = is_liquidatable as u128;
@@ -363,9 +367,9 @@ mod circuits {
         let interest_payment = actual_repay.min(user_state.accrued_interest);
         user_state.accrued_interest = user_state.accrued_interest - interest_payment;
 
+        // OPTIMIZATION: No .min() needed for principal_payment (same proof as repay)
         let principal_payment = actual_repay - interest_payment;
-        user_state.borrow_amount = user_state.borrow_amount - 
-            principal_payment.min(user_state.borrow_amount);
+        user_state.borrow_amount = user_state.borrow_amount - principal_payment;
 
         // Update pool state
         pool_state.total_deposits = pool_state.total_deposits - seized;

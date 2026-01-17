@@ -5,10 +5,10 @@ package_manager = "yarn"
 resolution = true
 skip-lint = false
 
-[programs.localnet]
-shadowlend_program = "AQMgx9c9vL1SCnZE7E4r4HRFZpHZDUcZJfdKt5YULRjD"
-
 [programs.devnet]
+shadowlend_program = "J6hwZmTBYjDQdVdbeX7vuhpwpqgrhHUqQaUk8qYsZvXK"
+
+[programs.localnet]
 shadowlend_program = "AQMgx9c9vL1SCnZE7E4r4HRFZpHZDUcZJfdKt5YULRjD"
 
 [registry]
@@ -22,23 +22,20 @@ wallet = "~/.config/solana/id.json"
 test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 \"tests/**/*.ts\""
 
 [test]
-# Increase startup wait time for large programs (30 seconds)
 startup_wait = 30000
-
-[test.validator]
-# Bind to all interfaces so Docker containers can access it
-url = "http://0.0.0.0:8899"
-wss_url = "ws://0.0.0.0:8900"
-# Bind RPC to all interfaces and set higher limits for WebSocket connections
-bind_address = "0.0.0.0"
-rpc_port = 8899
-rpc_pubsub_enable_block_subscription = true
-# Keep validator running with proper networking settings
-
+shutdown_wait = 2000
+upgradeable = false
 
 [[test.genesis]]
 address = "F3G6Q9tRicyznCqcZLydJ6RxkwDSBeHWM458J7V6aeyk"
 program = "/home/glitchy_moon/glitchy_moon/github_repo/ShadowLend/shadowlend_program/artifacts/arcium_program_0.5.4.so"
+
 [[test.genesis]]
 address = "L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95"
 program = "artifacts/lighthouse.so"
+
+[test.validator]
+bind_address = "0.0.0.0"
+url = "http://0.0.0.0:8899"
+ledger = ".anchor/test-ledger"
+rpc_port = 8899

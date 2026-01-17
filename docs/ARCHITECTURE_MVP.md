@@ -29,7 +29,7 @@ ShadowLend V1 is a **privacy-preserving** lending protocol built on Solana using
 | **Styling**        | TailwindCSS                  | Modern responsive design                     |
 | **Wallet**         | Solana Wallet Adapter        | Multi-wallet integration                     |
 | **Indexer**        | Helius Webhooks              | Transaction history & event tracking         |
-| **Oracle**         | Mock Prices (Hackathon)      | Fixed prices for demo; Pyth for production   |
+| **Oracle**         | Pyth Network                 | Real-time price feeds (SOL/USD, USDC/USD)    |
 | **State Mgmt**     | Zustand / React Query        | Client-side state management & caching       |
 
 ### Helius RPC Endpoints
@@ -75,7 +75,7 @@ solana-program = "2.x"
 | ------------------------ | -------------------------------------- |
 | Multi-asset pools        | **Single pool: SOL collateral → USDC** |
 | Dynamic interest rates   | **Fixed 5% APY borrow rate**           |
-| Pyth oracle integration  | **Mock prices (SOL=$150, USDC=$1)**    |
+| Multiple oracles         | **Pyth Network (SOL/USD, USDC/USD)**   |
 | Automated interest cron  | **On-demand interest (on borrow/repay)** |
 | Multi-cluster support    | **Devnet only**                        |
 
@@ -94,13 +94,21 @@ solana-program = "2.x"
 └─────────────────────────────────────┘
 ```
 
-### Mock Oracle Prices
+### Pyth Oracle Integration
 
 ```rust
-// For hackathon demo - hardcoded prices
-const SOL_PRICE_USD: u64 = 150_00;  // $150.00 (2 decimals)
-const USDC_PRICE_USD: u64 = 1_00;   // $1.00 (2 decimals)
+// Real-time prices from Pyth Network
+// Feed IDs (mainnet & devnet):
+const SOL_USD_FEED_ID: [u8; 32] = hex!("ef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d");
+const USDC_USD_FEED_ID: [u8; 32] = hex!("eaa020c61cc479712813461ce153894a96a6c00b21ed0cfc2798d1f9a9e9c94a");
+
+// Prices read via manual account parsing (30s staleness check)
+let sol_price_cents = get_price_from_pyth_account(&sol_price_update, &SOL_USD_FEED_ID, &clock)?;
+let usdc_price_cents = get_price_from_pyth_account(&usdc_price_update, &USDC_USD_FEED_ID, &clock)?;
 ```
+
+> [!NOTE]
+> Manual Pyth account parsing is used instead of `pyth-solana-receiver-sdk` due to version conflict with Arcium's `solana-program 2.3.0`.
 
 ---
 
@@ -571,8 +579,9 @@ Deposit_APY = Borrow_APY × U × (1 - Reserve_Factor)
 
 | Constant                 | Value                       | Location                          | Notes                                |
 | ------------------------ | --------------------------- | --------------------------------- | ------------------------------------ |
-| **SOL Price**            | $150.00 (15000 cents)       | `constants.rs`                    | Mock oracle price                    |
-| **USDC Price**           | $1.00 (100 cents)           | `constants.rs`                    | Mock oracle price                    |
+| **SOL Price**            | Pyth Oracle (real-time)     | `constants.rs`                    | Feed: `0xef0d...b56d`                |
+| **USDC Price**           | Pyth Oracle (real-time)     | `constants.rs`                    | Feed: `0xeaa0...c94a`                |
+| **Price Staleness**      | 30 seconds max              | `constants.rs`                    | Transactions fail if stale           |
 | **LTV (Loan-to-Value)**  | 80% (8000 bps)              | Pool initialization               | Maximum borrowing power              |
 | **Liquidation Threshold**| 85% (8500 bps)              | Pool initialization               | HF < 1.0 triggers liquidation        |
 | **Liquidation Bonus**    | 5% (500 bps)                | Pool initialization               | Liquidator profit incentive          |
@@ -638,10 +647,11 @@ Deposit_APY = Borrow_APY × U × (1 - Reserve_Factor)
   - Affects: All 6 callback handlers
   - Risk: Current XOR folding is collision-prone
   
-- [ ] **Oracle Integration (Pyth)**: Replace hardcoded prices with live Pyth oracle feeds
-  - Current: `SOL_PRICE_CENTS = 15000`, `USDC_PRICE_CENTS = 100`
-  - Target: Pull Pyth price account data in handlers
-  - Impact: All borrow, withdraw, liquidate circuits
+- [x] **Oracle Integration (Pyth)**: ~~Replace hardcoded prices with live Pyth oracle feeds~~ **DONE**
+  - Implementation: Manual account parsing in `constants.rs`
+  - Feed IDs: SOL/USD `0xef0d...`, USDC/USD `0xeaa0...`
+  - Staleness: 30 seconds max
+  - Note: `pyth-solana-receiver-sdk` incompatible with `solana-program 2.3.0`
 
 ### P1 (Important for Functionality)
 

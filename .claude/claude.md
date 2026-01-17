@@ -162,3 +162,111 @@ anchor test --skip-local-validator
 3. **Revealed operations = compute first, then transfer revealed amount**
 4. **Always pass encrypted pool state to circuits**
 5. **Use explicit ciphertext indices, not array length**
+6. **Always pass Pyth oracle accounts to borrow/withdraw/liquidate**
+
+---
+
+## Pyth Oracle Integration
+
+> [!IMPORTANT]
+> Pyth oracle is used for real-time pricing. **All borrow, withdraw, and liquidate instructions require Pyth price update accounts.**
+
+### Feed IDs (Mainnet & Devnet)
+
+| Asset | Feed ID |
+|-------|---------|
+| SOL/USD | `0xef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d` |
+| USDC/USD | `0xeaa020c61cc479712813461ce153894a96a6c00b21ed0cfc2798d1f9a9e9c94a` |
+
+### Account Structure
+
+```rust
+// borrow/withdraw/liquidate accounts.rs
+pub struct Borrow<'info> {
+    // ... other accounts ...
+    
+    /// CHECK: Pyth SOL/USD price update - validated in handler
+    pub sol_price_update: UncheckedAccount<'info>,
+    
+    /// CHECK: Pyth USDC/USD price update - validated in handler
+    pub usdc_price_update: UncheckedAccount<'info>,
+}
+```
+
+### Handler Pattern
+
+```rust
+// Read prices before building Arcium args
+let clock = Clock::get()?;
+let sol_price_cents = get_price_from_pyth_account(
+    &ctx.accounts.sol_price_update.to_account_info(),
+    &SOL_USD_FEED_ID,
+    &clock,
+)?;
+let usdc_price_cents = get_price_from_pyth_account(
+    &ctx.accounts.usdc_price_update.to_account_info(),
+    &USDC_USD_FEED_ID,
+    &clock,
+)?;
+```
+
+---
+
+## Pyth Integration Mistakes to Avoid
+
+### ❌ Wrong: Using `pyth-solana-receiver-sdk`
+
+```toml
+# BAD - SDK incompatible with solana-program 2.x
+pyth-solana-receiver-sdk = "0.5.0"
+```
+
+### ✅ Correct: Manual account parsing
+
+```rust
+// GOOD - Use custom parser in constants.rs
+use crate::constants::{get_price_from_pyth_account, SOL_USD_FEED_ID};
+
+let price = get_price_from_pyth_account(&account, &SOL_USD_FEED_ID, &clock)?;
+```
+
+### ❌ Wrong: Using `Account<PriceUpdateV2>` type
+
+```rust
+// BAD - PriceUpdateV2 requires incompatible SDK
+pub sol_price_update: Account<'info, PriceUpdateV2>,
+```
+
+### ✅ Correct: Using `UncheckedAccount`
+
+```rust
+// GOOD - Manual validation in handler
+/// CHECK: Validated via get_price_from_pyth_account
+pub sol_price_update: UncheckedAccount<'info>,
+```
+
+### ❌ Wrong: Forgetting oracle accounts
+
+```rust
+// BAD - Missing price feeds for HF calculation
+pub struct Borrow<'info> {
+    pub payer: Signer<'info>,
+    pub pool: Account<'info, Pool>,
+    // Missing sol_price_update and usdc_price_update!
+}
+```
+
+### ❌ Wrong: Not checking price staleness
+
+```rust
+// BAD - Stale prices can be exploited
+let price = account.data[offset..];  // No age check!
+```
+
+### ✅ Correct: Use staleness check
+
+```rust
+// GOOD - Enforces 30 second max age
+let price = get_price_from_pyth_account(&account, feed_id, &clock)?;  // Built-in check
+```
+

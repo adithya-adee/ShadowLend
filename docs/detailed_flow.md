@@ -155,8 +155,8 @@ sequenceDiagram
     Arcium->>UserObl: READ: Decrypt encrypted_state_blob
     Arcium->>Arcium: Current state:<br/>deposit = 150 SOL<br/>borrow = 0 USDC
 
-    Arcium->>Oracle: READ: Get SOL price ($150)
-    Arcium->>Oracle: READ: Get USDC price ($1)
+    Arcium->>Oracle: READ: Get SOL price (Pyth)
+    Arcium->>Oracle: READ: Get USDC price (Pyth)
 
     Arcium->>Arcium: Calculate Health Factor (PRIVATE):
     Note over Arcium: collateral_value = 150 SOL × $150 = $22,500<br/>new_borrow_value = 50 USDC × $1 = $50<br/>HF = ($22,500 × 0.8) / $50 = 360 ✅
@@ -313,8 +313,8 @@ sequenceDiagram
     Arcium->>UserObl: READ: Decrypt encrypted_state_blob
     Arcium->>Arcium: Current state:<br/>deposit = 150 SOL<br/>borrow = 50 USDC
 
-    Arcium->>Oracle: READ: Get SOL price ($30 - DROPPED!)
-    Arcium->>Oracle: READ: Get USDC price ($1)
+    Arcium->>Oracle: READ: Get SOL price (Pyth - real-time)
+    Arcium->>Oracle: READ: Get USDC price (Pyth - real-time)
 
     Arcium->>Arcium: Calculate Health Factor (PRIVATE):
     Note over Arcium: collateral_value = 150 SOL × $30 = $4,500<br/>borrow_value = 50 USDC × $1 = $50<br/>HF = ($4,500 × 0.8) / $50 = 72 ✅ Still safe!

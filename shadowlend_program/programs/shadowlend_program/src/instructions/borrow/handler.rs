@@ -3,7 +3,7 @@ use arcium_anchor::prelude::*;
 
 use super::accounts::Borrow;
 use super::callback::ComputeConfidentialBorrowCallback;
-use crate::constants::{SOL_PRICE_CENTS, USDC_PRICE_CENTS};
+use crate::constants::{get_price_from_pyth_account, SOL_USD_FEED_ID, USDC_USD_FEED_ID};
 use crate::error::ErrorCode;
 
 /// Handles borrow instruction by queuing MXE computation for health factor verification.
@@ -58,8 +58,20 @@ pub fn borrow_handler(
     // Get pool LTV for health factor calculation
     let ltv_bps = ctx.accounts.pool.ltv;
 
+    // Read real-time prices from Pyth oracles
+    let clock = Clock::get()?;
+    let sol_price_cents = get_price_from_pyth_account(
+        &ctx.accounts.sol_price_update.to_account_info(),
+        &SOL_USD_FEED_ID,
+        &clock,
+    )?;
+    let usdc_price_cents = get_price_from_pyth_account(
+        &ctx.accounts.usdc_price_update.to_account_info(),
+        &USDC_USD_FEED_ID,
+        &clock,
+    )?;
+
     // Build arguments for Arcium computation
-    // TODO: Add oracle pricing (either confidential / on chain)
     let args = ArgBuilder::new()
         .x25519_pubkey(pub_key)
         .plaintext_u128(nonce)
@@ -68,8 +80,8 @@ pub fn borrow_handler(
         .encrypted_u128(encrypted_state[32..64].try_into().unwrap())
         .encrypted_u128(encrypted_pool_state[0..32].try_into().unwrap())
         .encrypted_u128(encrypted_pool_state[32..64].try_into().unwrap())
-        .plaintext_u64(SOL_PRICE_CENTS)
-        .plaintext_u64(USDC_PRICE_CENTS)
+        .plaintext_u64(sol_price_cents)
+        .plaintext_u64(usdc_price_cents)
         .plaintext_u16(ltv_bps)
         .build();
 

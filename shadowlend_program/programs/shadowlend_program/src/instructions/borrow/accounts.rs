@@ -71,6 +71,13 @@ pub struct Borrow<'info> {
     #[account(address = ARCIUM_CLOCK_ACCOUNT_ADDRESS)]
     pub clock_account: Box<Account<'info, ClockAccount>>,
 
+    // === Pyth Oracle Accounts ===
+    /// CHECK: Pyth SOL/USD price update account - validated in handler
+    pub sol_price_update: UncheckedAccount<'info>,
+
+    /// CHECK: Pyth USDC/USD price update account - validated in handler
+    pub usdc_price_update: UncheckedAccount<'info>,
+
     // === Programs ===
     pub system_program: Program<'info, System>,
     pub arcium_program: Program<'info, Arcium>,

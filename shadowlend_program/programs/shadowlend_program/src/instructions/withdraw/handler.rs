@@ -3,7 +3,7 @@ use arcium_anchor::prelude::*;
 
 use super::accounts::Withdraw;
 use super::callback::ComputeConfidentialWithdrawCallback;
-use crate::constants::{SOL_PRICE_CENTS, USDC_PRICE_CENTS};
+use crate::constants::{get_price_from_pyth_account, SOL_USD_FEED_ID, USDC_USD_FEED_ID};
 use crate::error::ErrorCode;
 
 /// Handles withdrawal by queuing MXE computation for health factor verification.
@@ -64,6 +64,19 @@ pub fn withdraw_handler(
         state_arr
     };
 
+    // Read real-time prices from Pyth oracles
+    let clock = Clock::get()?;
+    let sol_price_cents = get_price_from_pyth_account(
+        &ctx.accounts.sol_price_update.to_account_info(),
+        &SOL_USD_FEED_ID,
+        &clock,
+    )?;
+    let usdc_price_cents = get_price_from_pyth_account(
+        &ctx.accounts.usdc_price_update.to_account_info(),
+        &USDC_USD_FEED_ID,
+        &clock,
+    )?;
+
     // Build arguments for Arcium MXE computation
     // Order: pub_key, nonce, amount, state[0..32], state[32..64], pool_state[0..32], pool_state[32..64], prices, ltv
     let args = ArgBuilder::new()
@@ -74,8 +87,8 @@ pub fn withdraw_handler(
         .encrypted_u128(encrypted_state[32..64].try_into().unwrap())
         .encrypted_u128(encrypted_pool_state[0..32].try_into().unwrap())
         .encrypted_u128(encrypted_pool_state[32..64].try_into().unwrap())
-        .plaintext_u64(SOL_PRICE_CENTS)
-        .plaintext_u64(USDC_PRICE_CENTS)
+        .plaintext_u64(sol_price_cents)
+        .plaintext_u64(usdc_price_cents)
         .plaintext_u16(ltv_bps)
         .build();
 

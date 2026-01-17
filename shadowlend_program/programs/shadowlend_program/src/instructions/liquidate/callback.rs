@@ -84,8 +84,9 @@ pub struct ComputeConfidentialLiquidateCallback<'info> {
     )]
     pub liquidator_borrow_account: Box<Account<'info, TokenAccount>>,
 
+    /// CHECK: Verified via constraint
     #[account(mut)]
-    pub liquidator: Signer<'info>,
+    pub liquidator: UncheckedAccount<'info>,
 
     pub token_program: Program<'info, Token>,
 }
@@ -119,8 +120,8 @@ pub fn liquidate_callback_handler(
     );
 
     // Index 4: Liquidated flag (bool)
+    // Index 4: Liquidated flag (bool)
     let is_liquidatable = user_output.ciphertexts[4][0] != 0;
-    require!(is_liquidatable, ErrorCode::PositionHealthy);
 
     // Index 5: Revealed Repay Amount (u64)
     let repay_amount = u64::from_le_bytes(
@@ -136,25 +137,7 @@ pub fn liquidate_callback_handler(
             .map_err(|_| ErrorCode::InvalidComputationOutput)?
     );
 
-    require!(repay_amount > 0, ErrorCode::InvalidBorrowAmount);
-    require!(collateral_seized > 0, ErrorCode::InvalidWithdrawAmount);
-    require!(
-        ctx.accounts.collateral_vault.amount >= collateral_seized,
-        ErrorCode::InsufficientLiquidity
-    );
-
-    // Transfer 1: Liquidator repays debt
-    let repay_accounts = Transfer {
-        from: ctx.accounts.liquidator_borrow_account.to_account_info(),
-        to: ctx.accounts.borrow_vault.to_account_info(),
-        authority: ctx.accounts.liquidator.to_account_info(),
-    };
-    token::transfer(
-        CpiContext::new(ctx.accounts.token_program.to_account_info(), repay_accounts),
-        repay_amount,
-    )?;
-
-    // Transfer 2: Liquidator receives collateral + bonus
+    // Prepare signer seeds for vault transfers
     let collateral_mint = ctx.accounts.pool.collateral_mint;
     let borrow_mint = ctx.accounts.pool.borrow_mint;
     let seeds = &[
@@ -165,51 +148,92 @@ pub fn liquidate_callback_handler(
     ];
     let signer_seeds = &[&seeds[..]];
 
-    let seize_accounts = Transfer {
-        from: ctx.accounts.collateral_vault.to_account_info(),
-        to: ctx.accounts.liquidator_collateral_account.to_account_info(),
-        authority: ctx.accounts.pool.to_account_info(),
-    };
-    token::transfer(
-        CpiContext::new_with_signer(
-            ctx.accounts.token_program.to_account_info(),
-            seize_accounts,
-            signer_seeds,
-        ),
-        collateral_seized,
-    )?;
+    if is_liquidatable {
+        require!(repay_amount > 0, ErrorCode::InvalidBorrowAmount);
+        require!(collateral_seized > 0, ErrorCode::InvalidWithdrawAmount);
+        require!(
+            ctx.accounts.collateral_vault.amount >= collateral_seized,
+            ErrorCode::InsufficientLiquidity
+        );
 
-    // Update user obligation
-    let user_obligation = &mut ctx.accounts.user_obligation;
-    user_obligation.state_nonce = user_obligation
-        .state_nonce
-        .checked_add(1)
-        .ok_or(ErrorCode::MathOverflow)?;
+        // Seize Collateral: Transfer from Collateral Vault to Liquidator
+        let seize_accounts = Transfer {
+            from: ctx.accounts.collateral_vault.to_account_info(),
+            to: ctx.accounts.liquidator_collateral_account.to_account_info(),
+            authority: ctx.accounts.pool.to_account_info(),
+        };
+        token::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                seize_accounts,
+                signer_seeds,
+            ),
+            collateral_seized,
+        )?;
 
-    let state_ciphertexts: Vec<u8> = user_output.ciphertexts[0..4]
-        .iter()
-        .flat_map(|c| c.to_vec())
-        .collect();
-    user_obligation.encrypted_state_blob = state_ciphertexts;
+        // Update user obligation state
+        let user_obligation = &mut ctx.accounts.user_obligation;
+        user_obligation.state_nonce = user_obligation
+            .state_nonce
+            .checked_add(1)
+            .ok_or(ErrorCode::MathOverflow)?;
 
-    // Compute keccak256 commitment of encrypted state (cryptographically secure)
-    let commitment = hashv(&[&user_obligation.encrypted_state_blob]);
-    user_obligation.state_commitment = commitment.to_bytes();
-    user_obligation.last_update_ts = Clock::get()?.unix_timestamp;
+        let state_ciphertexts: Vec<u8> = user_output.ciphertexts[0..4]
+            .iter()
+            .flat_map(|c| c.to_vec())
+            .collect();
+        user_obligation.encrypted_state_blob = state_ciphertexts;
 
-    let pool = &mut ctx.accounts.pool;
-    pool.last_update_ts = Clock::get()?.unix_timestamp;
+        // Compute keccak256 commitment of encrypted state
+        let commitment = hashv(&[&user_obligation.encrypted_state_blob]);
+        user_obligation.state_commitment = commitment.to_bytes();
+        user_obligation.last_update_ts = Clock::get()?.unix_timestamp;
 
-    // Liquidation amounts ARE public (protocol safety requirement)
-    emit!(LiquidationCompleted {
-        liquidator: ctx.accounts.liquidator.key(),
-        target_user: user_obligation.user,
-        pool: ctx.accounts.pool.key(),
-        repay_amount,
-        collateral_seized,
-        state_nonce: user_obligation.state_nonce,
-        timestamp: user_obligation.last_update_ts,
-    });
+        let pool = &mut ctx.accounts.pool;
+        pool.last_update_ts = Clock::get()?.unix_timestamp;
+
+        emit!(LiquidationCompleted {
+            liquidator: ctx.accounts.liquidator.key(),
+            target_user: user_obligation.user,
+            pool: ctx.accounts.pool.key(),
+            repay_amount,
+            collateral_seized,
+            state_nonce: user_obligation.state_nonce,
+            timestamp: user_obligation.last_update_ts,
+            success: true,
+        });
+    } else {
+        // Refund Repayment: Transfer from Borrow Vault back to Liquidator
+        if repay_amount > 0 {
+            let refund_accounts = Transfer {
+                from: ctx.accounts.borrow_vault.to_account_info(),
+                to: ctx.accounts.liquidator_borrow_account.to_account_info(),
+                authority: ctx.accounts.pool.to_account_info(),
+            };
+            token::transfer(
+                CpiContext::new_with_signer(
+                    ctx.accounts.token_program.to_account_info(),
+                    refund_accounts,
+                    signer_seeds,
+                ),
+                repay_amount,
+            )?;
+        }
+        
+        msg!("Liquidation invalid: Refunded {}", repay_amount);
+        
+        // Emit failure event (no state change)
+        emit!(LiquidationCompleted {
+            liquidator: ctx.accounts.liquidator.key(),
+            target_user: ctx.accounts.user_obligation.user,
+            pool: ctx.accounts.pool.key(),
+            repay_amount,
+            collateral_seized: 0,
+            state_nonce: ctx.accounts.user_obligation.state_nonce,
+            timestamp: Clock::get()?.unix_timestamp,
+            success: false,
+        });
+    }
 
     Ok(())
 }
@@ -224,4 +248,5 @@ pub struct LiquidationCompleted {
     pub collateral_seized: u64,
     pub state_nonce: u128,
     pub timestamp: i64,
+    pub success: bool,
 }

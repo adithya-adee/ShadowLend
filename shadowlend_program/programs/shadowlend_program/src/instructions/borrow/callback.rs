@@ -73,7 +73,7 @@ pub struct ComputeConfidentialBorrowCallback<'info> {
 
     /// CHECK: Verified via user_obligation.user constraint
     #[account(constraint = user.key() == user_obligation.user)]
-    pub user: Signer<'info>,
+    pub user: UncheckedAccount<'info>,
 
     pub token_program: Program<'info, Token>,
 }

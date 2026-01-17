@@ -1,4 +1,5 @@
 use anchor_lang::prelude::*;
+use anchor_spl::token::{self};
 use arcium_anchor::prelude::*;
 
 use super::accounts::Liquidate;
@@ -34,6 +35,19 @@ pub fn liquidate_handler(
         !user_obligation.encrypted_state_blob.is_empty(),
         ErrorCode::InvalidBorrowAmount
     );
+
+    // Optimistic Repayment: Transfer from liquidator to borrow vault
+    // If liquidation fails, this will be refunded in the callback
+    msg!("Transferring repayment amount to borrow vault (optimistic)...");
+    let transfer_accounts = token::Transfer {
+        from: ctx.accounts.liquidator_borrow_account.to_account_info(),
+        to: ctx.accounts.borrow_vault.to_account_info(),
+        authority: ctx.accounts.payer.to_account_info(),
+    };
+    token::transfer(
+        CpiContext::new(ctx.accounts.token_program.to_account_info(), transfer_accounts),
+        repay_amount,
+    )?;
 
     // Set signer PDA bump for Arcium computation
     ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;

@@ -47,7 +47,7 @@ pub struct ComputeConfidentialDepositCallback<'info> {
 
     /// CHECK: Verified via user_obligation.user constraint
     #[account(constraint = user.key() == user_obligation.user)]
-    pub user: Signer<'info>,
+    pub user: UncheckedAccount<'info>,
 }
 
 /// Process MXE deposit result - transfers tokens from user to vault

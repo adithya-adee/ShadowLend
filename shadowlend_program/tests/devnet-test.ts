@@ -30,6 +30,8 @@ import {
   getClusterAccAddress,
   getCompDefAccAddress,
   getCompDefAccOffset,
+  getArciumAccountBaseSeed,
+  getArciumProgramId,
   getMXEPublicKey,
   awaitComputationFinalization,
   RescueCipher,
@@ -270,7 +272,10 @@ async function testDeposit(
         mempoolAccount: mempoolAccount,
         executingPool: executingPool,
         compDefAccount: compDefAccount,
-      })
+        signPdaAccount: PublicKey.findProgramAddressSync(
+          [Buffer.from("SignerAccount")],
+          program.programId
+        )[0],      })
       .rpc({ commitment: "confirmed" });
     
     console.log(`\n✅ Deposit transaction sent!`);
@@ -408,7 +413,12 @@ async function testBorrow(
         mxeAccount: mxeAccount,
         mempoolAccount: mempoolAccount,
         executingPool: executingPool,
+
         compDefAccount: compDefAccount,
+        signPdaAccount: PublicKey.findProgramAddressSync(
+          [Buffer.from("SignerAccount")],
+          program.programId
+        )[0],
         solPriceUpdate: solPriceUpdate,
         usdcPriceUpdate: usdcPriceUpdate,
       })

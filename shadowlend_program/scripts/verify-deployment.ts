@@ -1,71 +1,75 @@
+#!/usr/bin/env ts-node
 /**
  * ShadowLend Deployment Verification Script
  * 
  * Verifies all PDAs and accounts are correctly initialized.
  * 
+ * Compatible with:
+ * - Arcium SDK v0.5.4
+ * - Anchor v0.32.x
+ * 
  * Usage:
- *   ANCHOR_PROVIDER_URL=https://api.devnet.solana.com npx ts-node scripts/verify-deployment.ts
+ *   ANCHOR_PROVIDER_URL=https://api.devnet.solana.com \
+ *   ANCHOR_WALLET=~/.config/solana/id.json \
+ *   npx ts-node scripts/verify-deployment.ts
  */
 
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
-import { 
-  PublicKey, 
-  LAMPORTS_PER_SOL,
-} from "@solana/web3.js";
+import { PublicKey } from "@solana/web3.js";
 import { getAccount } from "@solana/spl-token";
-import * as fs from "fs";
 import * as path from "path";
 
-// ============================================================
-// Configuration
-// ============================================================
-
-const PROGRAM_ID = new PublicKey("6KiV2x1SxqtPALq9gdyxFXZiuWmwFRdsxMNpnyyPThg3");
+import {
+  PROGRAM_ID,
+  setupProvider,
+  loadDeployment,
+  loadIdl,
+  printHeader,
+} from "./lib";
 
 // ============================================================
 // Main
 // ============================================================
 
 async function main() {
-  console.log("═".repeat(60));
-  console.log("       ShadowLend Deployment Verification");
-  console.log("═".repeat(60));
+  printHeader("ShadowLend Deployment Verification");
 
   // Load provider
-  const provider = anchor.AnchorProvider.env();
-  anchor.setProvider(provider);
+  const provider = setupProvider();
   const connection = provider.connection;
 
   // Load deployment info
-  const deploymentPath = path.join(__dirname, "../deployment.json");
-  if (!fs.existsSync(deploymentPath)) {
+  const basePath = path.join(__dirname, "..");
+  let deployment: any;
+  
+  try {
+    deployment = loadDeployment(basePath);
+  } catch {
     console.error("\n❌ deployment.json not found.");
-    console.error("   Run 'npx ts-node scripts/deploy-devnet.ts' first.");
+    console.error("   Run 'npm run deploy' first.");
     process.exit(1);
   }
 
-  const deployment = JSON.parse(fs.readFileSync(deploymentPath, "utf-8"));
   console.log(`\n📅 Deployed: ${deployment.deployedAt}`);
   console.log(`🌐 Network:  ${deployment.network}`);
 
   // Load IDL
-  const idlPath = path.join(__dirname, "../target/idl/shadowlend_program.json");
-  if (!fs.existsSync(idlPath)) {
-    console.error(`\n❌ IDL not found at ${idlPath}`);
-    process.exit(1);
-  }
-  const idl = JSON.parse(fs.readFileSync(idlPath, "utf-8"));
+  const idl = loadIdl(basePath);
   const program = new Program(idl, provider) as any;
 
   let allPassed = true;
+  let warnings: string[] = [];
+
+  console.log("\n📋 Checking accounts...\n");
 
   // Check 1: Program exists
-  console.log("\n📋 Checking accounts...\n");
-  
-  const programInfo = await connection.getAccountInfo(new PublicKey(deployment.programId));
+  const programInfo = await connection.getAccountInfo(
+    new PublicKey(deployment.programId)
+  );
   if (programInfo) {
     console.log(`✅ Program:          ${deployment.programId.slice(0, 20)}...`);
+    console.log(`   • Size:           ${programInfo.data.length} bytes`);
   } else {
     console.log(`❌ Program:          NOT FOUND`);
     allPassed = false;
@@ -73,7 +77,9 @@ async function main() {
 
   // Check 2: Pool account
   try {
-    const pool = await program.account.pool.fetch(new PublicKey(deployment.poolPda));
+    const pool = await program.account.pool.fetch(
+      new PublicKey(deployment.poolPda)
+    );
     console.log(`✅ Pool:             ${deployment.poolPda.slice(0, 20)}...`);
     console.log(`   • Authority:      ${pool.authority.toBase58().slice(0, 20)}...`);
     console.log(`   • LTV:            ${pool.ltv / 100}%`);
@@ -88,11 +94,11 @@ async function main() {
   // Check 3: Collateral vault
   try {
     const collateralVault = await getAccount(
-      connection, 
+      connection,
       new PublicKey(deployment.collateralVault)
     );
     console.log(`✅ Collateral Vault: ${deployment.collateralVault.slice(0, 20)}...`);
-    console.log(`   • Balance:        ${Number(collateralVault.amount) / 1e9} tokens`);
+    console.log(`   • Balance:        ${Number(collateralVault.amount) / 1e9} wSOL`);
   } catch (e) {
     console.log(`❌ Collateral Vault: NOT FOUND`);
     allPassed = false;
@@ -101,14 +107,14 @@ async function main() {
   // Check 4: Borrow vault
   try {
     const borrowVault = await getAccount(
-      connection, 
+      connection,
       new PublicKey(deployment.borrowVault)
     );
     console.log(`✅ Borrow Vault:     ${deployment.borrowVault.slice(0, 20)}...`);
     console.log(`   • Balance:        ${Number(borrowVault.amount) / 1e6} USDC`);
-    
+
     if (Number(borrowVault.amount) === 0) {
-      console.log(`   ⚠️  Warning: Borrow vault is empty!`);
+      warnings.push("Borrow vault is empty - users cannot borrow");
     }
   } catch (e) {
     console.log(`❌ Borrow Vault:     NOT FOUND`);
@@ -136,12 +142,19 @@ async function main() {
     allPassed = false;
   }
 
+  // Warnings
+  if (warnings.length > 0) {
+    console.log("\n⚠️  Warnings:");
+    warnings.forEach((w) => console.log(`   • ${w}`));
+  }
+
   // Summary
   console.log("\n" + "═".repeat(60));
   if (allPassed) {
     console.log("✅ All checks passed! Deployment is valid.");
   } else {
     console.log("❌ Some checks failed. See above for details.");
+    process.exit(1);
   }
   console.log("═".repeat(60));
 }

@@ -30,7 +30,6 @@ pub fn update_interest_handler(
     );
 
     // Set signer PDA bump for Arcium computation
-    ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
 
     // Read encrypted state from on-chain UserObligation
     let mut encrypted_state = [0u8; 64];

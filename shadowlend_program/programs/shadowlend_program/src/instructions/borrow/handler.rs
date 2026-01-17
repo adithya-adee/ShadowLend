@@ -37,7 +37,6 @@ pub fn borrow_handler(
         ErrorCode::InvalidBorrowAmount
     );
 
-    ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
 
     // Read encrypted state from on-chain UserObligation
     let mut encrypted_state = [0u8; 64];

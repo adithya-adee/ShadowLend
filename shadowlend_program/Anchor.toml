@@ -15,7 +15,7 @@ shadowlend_program = "J6hwZmTBYjDQdVdbeX7vuhpwpqgrhHUqQaUk8qYsZvXK"
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "devnet"
+cluster = "https://api.devnet.solana.com"
 wallet = "~/.config/solana/id.json"
 
 [scripts]

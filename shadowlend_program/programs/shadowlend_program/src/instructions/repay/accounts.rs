@@ -53,14 +53,7 @@ pub struct Repay<'info> {
     pub borrow_vault: Box<Account<'info, TokenAccount>>,
 
     // === Arcium MXE Accounts ===
-    #[account(
-        init_if_needed,
-        space = 9,
-        payer = payer,
-        seeds = [&SIGN_PDA_SEED],
-        bump,
-        address = derive_sign_pda!(),
-    )]
+    #[account(address = derive_sign_pda!())]
     pub sign_pda_account: Account<'info, SignerAccount>,
 
     #[account(address = derive_mxe_pda!())]
@@ -90,7 +83,6 @@ pub struct Repay<'info> {
     #[account(address = ARCIUM_CLOCK_ACCOUNT_ADDRESS)]
     pub clock_account: Box<Account<'info, ClockAccount>>,
 
-    // === Programs ===
     // === Programs ===
     pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token>,

@@ -33,14 +33,7 @@ pub struct Withdraw<'info> {
     pub user_obligation: Box<Account<'info, UserObligation>>,
 
     // === Arcium MXE Accounts ===
-    #[account(
-        init_if_needed,
-        space = 9,
-        payer = payer,
-        seeds = [&SIGN_PDA_SEED],
-        bump,
-        address = derive_sign_pda!(),
-    )]
+    #[account(address = derive_sign_pda!())]
     pub sign_pda_account: Account<'info, SignerAccount>,
 
     #[account(address = derive_mxe_pda!())]

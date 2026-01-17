@@ -36,7 +36,6 @@ pub fn repay_handler(
     );
 
     // Set signer PDA bump for Arcium computation
-    ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
 
     // 1. Perform Public SPL Transfer (Atomic Repay)
     let transfer_accounts = token::Transfer {

@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Mint, Token, TokenAccount};
+use anchor_spl::token::{Mint, Token, TokenAccount};
 use arcium_anchor::prelude::*;
 
 use crate::state::{Pool, UserObligation};
@@ -36,14 +36,7 @@ pub struct Liquidate<'info> {
     pub user_obligation: Box<Account<'info, UserObligation>>,
 
     // === Arcium MXE Accounts ===
-    #[account(
-        init_if_needed,
-        space = 9,
-        payer = payer,
-        seeds = [&SIGN_PDA_SEED],
-        bump,
-        address = derive_sign_pda!(),
-    )]
+    #[account(address = derive_sign_pda!())]
     pub sign_pda_account: Account<'info, SignerAccount>,
 
     #[account(address = derive_mxe_pda!())]
@@ -100,7 +93,6 @@ pub struct Liquidate<'info> {
     /// CHECK: Pyth USDC/USD price update account - validated in handler
     pub usdc_price_update: UncheckedAccount<'info>,
 
-    // === Programs ===
     // === Programs ===
     pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token>,

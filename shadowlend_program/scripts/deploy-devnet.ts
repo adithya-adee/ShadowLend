@@ -46,7 +46,7 @@ import {
 // Configuration
 // ============================================================
 
-const PROGRAM_ID = new PublicKey("AQMgx9c9vL1SCnZE7E4r4HRFZpHZDUcZJfdKt5YULRjD");
+const PROGRAM_ID = new PublicKey("J6hwZmTBYjDQdVdbeX7vuhpwpqgrhHUqQaUk8qYsZvXK");
 
 // PDA Seeds
 const POOL_SEED = Buffer.from("pool");

@@ -73,9 +73,7 @@ pub struct InitComputeBorrowCompDef<'info> {
 /// Initialize confidential borrow computation definition
 ///
 /// Registers the compute_confidential_borrow circuit with Arcium MXE.
-pub fn init_compute_borrow_comp_def_handler(
-    ctx: Context<InitComputeBorrowCompDef>,
-) -> Result<()> {
+pub fn init_compute_borrow_comp_def_handler(ctx: Context<InitComputeBorrowCompDef>) -> Result<()> {
     init_comp_def(ctx.accounts, None, None)?;
     Ok(())
 }
@@ -149,9 +147,7 @@ pub struct InitComputeRepayCompDef<'info> {
 /// Initialize confidential repay computation definition
 ///
 /// Registers the compute_confidential_repay circuit with Arcium MXE.
-pub fn init_compute_repay_comp_def_handler(
-    ctx: Context<InitComputeRepayCompDef>,
-) -> Result<()> {
+pub fn init_compute_repay_comp_def_handler(ctx: Context<InitComputeRepayCompDef>) -> Result<()> {
     init_comp_def(ctx.accounts, None, None)?;
     Ok(())
 }

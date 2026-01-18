@@ -134,9 +134,25 @@ async function testDeposit(
   console.log("\n📤 Sending deposit transaction...");
   console.log(`   Amount: ${depositAmount.toNumber() / LAMPORTS_PER_SOL} SOL`);
 
+  // Generate x25519 keypair for output encryption
+  // The MXE will encrypt the output so only the user can decrypt with their private key
+  const { publicKey: userX25519PubKey } = await createEncryptionContext(
+    provider,
+    program.programId
+  );
+  const nonce = generateNonce();
+  const nonceAsBN = nonceToU128(nonce);
+
+  console.log(`   User x25519 pubkey: ${Buffer.from(userX25519PubKey).toString("hex").slice(0, 16)}...`);
+
   try {
     const sig = await program.methods
-      .deposit(computationOffset, depositAmount)
+      .deposit(
+        computationOffset,
+        depositAmount,
+        Array.from(userX25519PubKey) as number[],
+        nonceAsBN
+      )
       .accountsPartial({
         payer: payer.publicKey,
         pool: poolPda,

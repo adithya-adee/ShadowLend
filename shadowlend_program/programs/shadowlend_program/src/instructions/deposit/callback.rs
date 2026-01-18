@@ -71,7 +71,7 @@ pub fn deposit_callback_handler(
 
     // Access user output (field_0 of the tuple struct)
     let user_output = &result.field_0;
-    
+
     require!(
         !user_output.ciphertexts.is_empty(),
         ErrorCode::InvalidComputationOutput

@@ -5,9 +5,7 @@ use crate::state::{Pool, UserObligation};
 use crate::ArciumSignerAccount;
 use crate::{ID, ID_CONST};
 
-
 use crate::error::ErrorCode;
-
 
 /// Accounts for borrow instruction (queues computation only)
 /// Token transfer happens in callback after MXE verification

@@ -68,7 +68,7 @@ pub fn repay_callback_handler(
     };
 
     msg!("MXE repay computation verified");
-    
+
     // Access user output (field_0 of the tuple struct)
     // field_0: ConfidentialRepayOutput (Shared), field_1: PoolState (MXE)
     let user_output = &result.field_0;

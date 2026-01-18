@@ -6,7 +6,6 @@ use crate::state::{Pool, UserObligation};
 use crate::ArciumSignerAccount;
 use crate::{ID, ID_CONST};
 
-
 use crate::error::ErrorCode;
 
 /// Accounts for repay instruction (queues computation only)

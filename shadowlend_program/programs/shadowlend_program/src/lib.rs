@@ -30,12 +30,11 @@ pub const COMP_DEF_OFFSET_COMPUTE_WITHDRAW: u32 = comp_def_offset("compute_confi
 pub const COMP_DEF_OFFSET_COMPUTE_REPAY: u32 = comp_def_offset("compute_confidential_repay");
 
 /// Computation definition offset for liquidate circuit
-pub const COMP_DEF_OFFSET_COMPUTE_LIQUIDATE: u32 = comp_def_offset("compute_confidential_liquidate");
+pub const COMP_DEF_OFFSET_COMPUTE_LIQUIDATE: u32 =
+    comp_def_offset("compute_confidential_liquidate");
 
 /// Computation definition offset for interest circuit
 pub const COMP_DEF_OFFSET_COMPUTE_INTEREST: u32 = comp_def_offset("compute_confidential_interest");
-
-
 
 #[arcium_program]
 pub mod shadowlend_program {
@@ -83,7 +82,9 @@ pub mod shadowlend_program {
     }
 
     /// Register the liquidate computation definition with Arcium MXE
-    pub fn init_compute_liquidate_comp_def(ctx: Context<InitComputeLiquidateCompDef>) -> Result<()> {
+    pub fn init_compute_liquidate_comp_def(
+        ctx: Context<InitComputeLiquidateCompDef>,
+    ) -> Result<()> {
         instructions::admin::init_compute_liquidate_comp_def_handler(ctx)
     }
 
@@ -102,8 +103,10 @@ pub mod shadowlend_program {
         ctx: Context<Deposit>,
         computation_offset: u64,
         amount: u64,
+        user_pubkey: [u8; 32],
+        nonce: u128,
     ) -> Result<()> {
-        instructions::deposit::deposit_handler(ctx, computation_offset, amount)
+        instructions::deposit::deposit_handler(ctx, computation_offset, amount, user_pubkey, nonce)
     }
 
     /// Callback from Arcium MXE after deposit computation completes
@@ -187,12 +190,10 @@ pub mod shadowlend_program {
         ctx: Context<Repay>,
         computation_offset: u64,
         amount: u64,
+        user_pubkey: [u8; 32],
+        nonce: u128,
     ) -> Result<()> {
-        instructions::repay::repay_handler(
-            ctx,
-            computation_offset,
-            amount,
-        )
+        instructions::repay::repay_handler(ctx, computation_offset, amount, user_pubkey, nonce)
     }
 
     /// Callback from Arcium MXE after repay computation completes
@@ -214,8 +215,16 @@ pub mod shadowlend_program {
         ctx: Context<Liquidate>,
         computation_offset: u64,
         repay_amount: u64,
+        target_user_pubkey: [u8; 32],
+        nonce: u128,
     ) -> Result<()> {
-        instructions::liquidate::liquidate_handler(ctx, computation_offset, repay_amount)
+        instructions::liquidate::liquidate_handler(
+            ctx,
+            computation_offset,
+            repay_amount,
+            target_user_pubkey,
+            nonce,
+        )
     }
 
     /// Callback from Arcium MXE after liquidation computation completes
@@ -233,8 +242,13 @@ pub mod shadowlend_program {
 
     /// Accrue interest on a user's borrow position.
     /// Anyone can trigger; computed privately in MXE.
-    pub fn update_interest(ctx: Context<UpdateInterest>, computation_offset: u64) -> Result<()> {
-        instructions::interest::update_interest_handler(ctx, computation_offset)
+    pub fn update_interest(
+        ctx: Context<UpdateInterest>,
+        computation_offset: u64,
+        user_pubkey: [u8; 32],
+        nonce: u128,
+    ) -> Result<()> {
+        instructions::interest::update_interest_handler(ctx, computation_offset, user_pubkey, nonce)
     }
 
     /// Callback from Arcium MXE after interest computation completes

@@ -100,7 +100,7 @@ pub fn borrow_callback_handler(
     // Access user output (field_0 of the tuple struct)
     // field_0: ConfidentialBorrowOutput (Shared), field_1: PoolState (MXE)
     let user_output = &result.field_0;
-    
+
     // Validating output length (UserState [4] + Approved [1] + Amount [1] = 6)
     require!(
         user_output.ciphertexts.len() >= 6,
@@ -108,7 +108,7 @@ pub fn borrow_callback_handler(
     );
 
     // Index 4: Approval flag (bool)
-    // Note: Arcium booleans are often returned as a byte/field element. 
+    // Note: Arcium booleans are often returned as a byte/field element.
     // Checking first byte != 0 is standard.
     let approved = user_output.ciphertexts[4][0] != 0;
     require!(approved, ErrorCode::BorrowRejected);
@@ -117,7 +117,7 @@ pub fn borrow_callback_handler(
     let borrow_amount = u64::from_le_bytes(
         user_output.ciphertexts[5][0..8]
             .try_into()
-            .map_err(|_| ErrorCode::InvalidComputationOutput)?
+            .map_err(|_| ErrorCode::InvalidComputationOutput)?,
     );
 
     require!(borrow_amount > 0, ErrorCode::InvalidBorrowAmount);

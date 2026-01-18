@@ -46,20 +46,22 @@ pub fn withdraw_handler(
     ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
 
     // Read encrypted state from on-chain UserObligation (prevent state injection attack)
-    let mut encrypted_state = [0u8; 64];
-    let len = user_obligation.encrypted_state_blob.len().min(64);
+    // UserState has 4 u128 fields = 4 * 32 = 128 bytes
+    let mut encrypted_state = [0u8; 128];
+    let len = user_obligation.encrypted_state_blob.len().min(128);
     encrypted_state[..len].copy_from_slice(&user_obligation.encrypted_state_blob[..len]);
 
     // Get pool LTV for health factor calculation
     let ltv_bps = ctx.accounts.pool.ltv;
 
     // Read pool state (MXE only)
+    // PoolState has 4 u128 fields = 4 * 32 = 128 bytes
     let pool = &ctx.accounts.pool;
-    let encrypted_pool_state: [u8; 64] = if pool.encrypted_pool_state.is_empty() {
-         [0u8; 64]
+    let encrypted_pool_state: [u8; 128] = if pool.encrypted_pool_state.is_empty() {
+        [0u8; 128]
     } else {
-         let mut state_arr = [0u8; 64];
-        let len = pool.encrypted_pool_state.len().min(64);
+        let mut state_arr = [0u8; 128];
+        let len = pool.encrypted_pool_state.len().min(128);
         state_arr[..len].copy_from_slice(&pool.encrypted_pool_state[..len]);
         state_arr
     };
@@ -78,18 +80,24 @@ pub fn withdraw_handler(
     )?;
 
     // Build arguments for Arcium MXE computation
-    // Order: pub_key, nonce, amount, state[0..32], state[32..64], pool_state[0..32], pool_state[32..64], prices, ltv
+    // Order: pub_key, nonce, amount, state[0..128] (4 chunks), pool_state[0..128] (4 chunks), prices, ltv
     let args = ArgBuilder::new()
         .x25519_pubkey(pub_key)
         .plaintext_u128(nonce)
         .encrypted_u128(encrypted_amount)
+        // 4 encrypted u128 for UserState
         .encrypted_u128(encrypted_state[0..32].try_into().unwrap())
         .encrypted_u128(encrypted_state[32..64].try_into().unwrap())
+        .encrypted_u128(encrypted_state[64..96].try_into().unwrap())
+        .encrypted_u128(encrypted_state[96..128].try_into().unwrap())
+        // 4 encrypted u128 for PoolState
         .encrypted_u128(encrypted_pool_state[0..32].try_into().unwrap())
         .encrypted_u128(encrypted_pool_state[32..64].try_into().unwrap())
+        .encrypted_u128(encrypted_pool_state[64..96].try_into().unwrap())
+        .encrypted_u128(encrypted_pool_state[96..128].try_into().unwrap())
         .plaintext_u64(sol_price_cents)
         .plaintext_u64(usdc_price_cents)
-        .plaintext_u16(ltv_bps)
+        .plaintext_u64(ltv_bps as u64)
         .build();
 
     // Queue computation with callback instruction

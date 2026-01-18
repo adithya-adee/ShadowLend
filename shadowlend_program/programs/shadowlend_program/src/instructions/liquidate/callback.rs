@@ -127,14 +127,14 @@ pub fn liquidate_callback_handler(
     let repay_amount = u64::from_le_bytes(
         user_output.ciphertexts[5][0..8]
             .try_into()
-            .map_err(|_| ErrorCode::InvalidComputationOutput)?
+            .map_err(|_| ErrorCode::InvalidComputationOutput)?,
     );
 
     // Index 6: Revealed Seized Collateral (u64)
     let collateral_seized = u64::from_le_bytes(
         user_output.ciphertexts[6][0..8]
             .try_into()
-            .map_err(|_| ErrorCode::InvalidComputationOutput)?
+            .map_err(|_| ErrorCode::InvalidComputationOutput)?,
     );
 
     // Prepare signer seeds for vault transfers
@@ -219,9 +219,9 @@ pub fn liquidate_callback_handler(
                 repay_amount,
             )?;
         }
-        
+
         msg!("Liquidation invalid: Refunded {}", repay_amount);
-        
+
         // Emit failure event (no state change)
         emit!(LiquidationCompleted {
             liquidator: ctx.accounts.liquidator.key(),

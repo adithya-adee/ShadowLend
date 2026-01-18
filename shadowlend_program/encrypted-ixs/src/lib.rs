@@ -151,7 +151,7 @@ mod circuits {
 
         // Update pool state
         pool_state.total_borrows = pool_state.total_borrows + borrow_delta;
-        pool_state.available_borrow_liquidity = 
+        pool_state.available_borrow_liquidity =
             pool_state.available_borrow_liquidity - borrow_delta;
 
         // REVEAL Logic: Only reveal amount if approved
@@ -223,7 +223,7 @@ mod circuits {
 
         // Update pool state
         pool_state.total_deposits = pool_state.total_deposits - withdraw_delta;
-        
+
         // REVEAL Logic: Only reveal amount if approved
         let revealed = if approved { withdraw_delta as u64 } else { 0 };
 
@@ -253,7 +253,7 @@ mod circuits {
     }
 
     /// Confidential repay: reduces borrow balance without revealing amount
-    /// 
+    ///
     /// PRIVACY: Only reveals success flag.
     /// Repayment priority: interest first, then principal
     #[instruction]
@@ -289,12 +289,11 @@ mod circuits {
         user_state.accrued_interest = new_interest;
 
         // Update pool state
-        pool_state.total_borrows = pool_state.total_borrows - 
-            principal_payment.min(pool_state.total_borrows);
-        pool_state.available_borrow_liquidity = 
+        pool_state.total_borrows =
+            pool_state.total_borrows - principal_payment.min(pool_state.total_borrows);
+        pool_state.available_borrow_liquidity =
             pool_state.available_borrow_liquidity + actual_repay;
-        pool_state.accumulated_interest = 
-            pool_state.accumulated_interest + interest_payment;
+        pool_state.accumulated_interest = pool_state.accumulated_interest + interest_payment;
 
         let success = actual_repay > 0;
 
@@ -335,7 +334,10 @@ mod circuits {
         borrow_price: u64,
         liquidation_threshold: u64,
         liquidation_bonus: u64,
-    ) -> (Enc<Shared, ConfidentialLiquidateOutput>, Enc<Mxe, PoolState>) {
+    ) -> (
+        Enc<Shared, ConfidentialLiquidateOutput>,
+        Enc<Mxe, PoolState>,
+    ) {
         let mut user_state = current_user_state.to_arcis();
         let mut pool_state = current_pool_state.to_arcis();
 
@@ -379,10 +381,9 @@ mod circuits {
 
         // Update pool state
         pool_state.total_deposits = pool_state.total_deposits - seized;
-        pool_state.total_borrows = pool_state.total_borrows - 
-            principal_payment.min(pool_state.total_borrows);
-        pool_state.accumulated_interest = 
-            pool_state.accumulated_interest + interest_payment;
+        pool_state.total_borrows =
+            pool_state.total_borrows - principal_payment.min(pool_state.total_borrows);
+        pool_state.accumulated_interest = pool_state.accumulated_interest + interest_payment;
 
         let output = ConfidentialLiquidateOutput {
             new_user_state: user_state,
@@ -411,7 +412,7 @@ mod circuits {
     }
 
     /// Confidential interest accrual: updates interest without revealing amount
-    /// 
+    ///
     /// PRIVACY: Only reveals success flag.
     /// Interest calculation:
     /// interest = borrow_amount * (rate_bps / 10000) * (time_elapsed / SECONDS_PER_YEAR)
@@ -456,4 +457,3 @@ mod circuits {
         )
     }
 }
-

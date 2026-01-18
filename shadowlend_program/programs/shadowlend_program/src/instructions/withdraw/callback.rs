@@ -110,7 +110,7 @@ pub fn withdraw_callback_handler(
     let withdraw_amount = u64::from_le_bytes(
         user_output.ciphertexts[5][0..8]
             .try_into()
-            .map_err(|_| ErrorCode::InvalidComputationOutput)?
+            .map_err(|_| ErrorCode::InvalidComputationOutput)?,
     );
 
     require!(withdraw_amount > 0, ErrorCode::InvalidWithdrawAmount);

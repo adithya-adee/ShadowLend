@@ -83,7 +83,7 @@ pub fn borrow_handler(
         .encrypted_u128(encrypted_state[0..32].try_into().unwrap())
         .encrypted_u128(encrypted_state[32..64].try_into().unwrap())
         .encrypted_u128(encrypted_state[64..96].try_into().unwrap())
-        .encrypted_u128(encrypted_state[96..128].try_into().unwrap())
+        .encrypted_i64(encrypted_state[96..128].try_into().unwrap())
         // 4 encrypted u128 for PoolState
         .encrypted_u128(encrypted_pool_state[0..32].try_into().unwrap())
         .encrypted_u128(encrypted_pool_state[32..64].try_into().unwrap())

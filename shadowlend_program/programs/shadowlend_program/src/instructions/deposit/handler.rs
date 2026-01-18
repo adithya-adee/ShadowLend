@@ -92,7 +92,7 @@ pub fn deposit_handler(
         .encrypted_u128(encrypted_user_state[0..32].try_into().unwrap())
         .encrypted_u128(encrypted_user_state[32..64].try_into().unwrap())
         .encrypted_u128(encrypted_user_state[64..96].try_into().unwrap())
-        .encrypted_u128(encrypted_user_state[96..128].try_into().unwrap())
+        .encrypted_i64(encrypted_user_state[96..128].try_into().unwrap())
         // Enc<Mxe, PoolState> - MXE-only, no user pubkey needed (uses MXE's key)
         // 4 encrypted u128 for PoolState (total_deposits, total_borrows, accumulated_interest, available_borrow_liquidity)
         .encrypted_u128(encrypted_pool_state[0..32].try_into().unwrap())

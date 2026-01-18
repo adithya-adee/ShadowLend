@@ -272,10 +272,11 @@ let price = get_price_from_pyth_account(&account, feed_id, &clock)?;  // Built-i
 
 ---
 
-## Arcium v0.5.x PDA Issues and Fixes
+## Arcium PDA Issues and Fixes (v0.5.x Legacy)
 
 > [!IMPORTANT]
-> These are critical mistakes we discovered while integrating Arcium SDK v0.5.4. Incorrect PDA derivation causes `ConstraintAddress`, `ConstraintSeeds`, or `AccountNotInitialized` errors.
+> These are critical mistakes discovered while integrating Arcium SDK v0.5.4.
+> **For v0.6.2+ migration, see the [Arcium v0.6.2 Migration Guide](#arcium-v062-migration-guide) section below.**
 
 ### Documentation Links
 
@@ -506,3 +507,226 @@ pub struct Deposit<'info> {
 2. Try a different cluster offset
 3. Contact Arcium support about devnet cluster availability
 
+---
+
+## Arcium v0.6.2 Migration Guide
+
+> [!IMPORTANT]
+> These changes are REQUIRED when upgrading from Arcium v0.5.x to v0.6.2+
+
+### Migration Checklist
+
+| Change | Files Affected |
+|--------|----------------|
+| `SignerAccount` → `ArciumSignerAccount` | All `accounts.rs` files (type and import) |
+| `&SIGN_PDA_SEED` → `b"ArciumSignerAccount"` | All `accounts.rs` files (PDA seeds) |
+| Add `mut` to `clock_account` | All `accounts.rs` files |
+| Add `crate::ID` import | All `accounts.rs` files |
+| `arcis-imports` → `arcis` | `encrypted-ixs/Cargo.toml` |
+| `use arcis_imports::*` → `use arcis::*` | `encrypted-ixs/src/lib.rs` |
+| `@arcium-hq/client` → `0.6.2` | `package.json` |
+| TypeScript PDA seed → `"ArciumSignerAccount"` | All TS files deriving signer PDA |
+
+---
+
+### Issue 1: SignerAccount Renamed to ArciumSignerAccount
+
+**Symptom:** Compilation errors about missing `SignerAccount` type.
+
+**Root Cause:** Arcium v0.6.2 renamed `SignerAccount` to `ArciumSignerAccount`.
+
+#### ❌ Wrong: Using old type name
+
+```rust
+// BAD - SignerAccount no longer exists in Arcium v0.6.2
+use arcium_anchor::prelude::SignerAccount;
+
+pub sign_pda_account: Account<'info, SignerAccount>,
+```
+
+#### ✅ Correct: Use new type name
+
+```rust
+// GOOD - Use ArciumSignerAccount from arcium_anchor::prelude::*
+pub sign_pda_account: Account<'info, ArciumSignerAccount>,
+```
+
+---
+
+### Issue 2: PDA Seed Changed
+
+**Symptom:** `ConstraintSeeds` error - PDA derivation mismatch.
+
+**Root Cause:** The PDA seed must now be `b"ArciumSignerAccount"` instead of `&SIGN_PDA_SEED`.
+
+#### ❌ Wrong: Using old SIGN_PDA_SEED constant
+
+```rust
+// BAD - SIGN_PDA_SEED may contain old "SignerAccount" value
+#[account(
+    init_if_needed,
+    space = 9,
+    payer = payer,
+    seeds = [&SIGN_PDA_SEED],
+    bump,
+)]
+pub sign_pda_account: Account<'info, ArciumSignerAccount>,
+```
+
+#### ✅ Correct: Use literal bytes
+
+```rust
+// GOOD - Use literal bytes matching Arcium v0.6.2
+#[account(
+    init_if_needed,
+    space = 9,
+    payer = payer,
+    seeds = [b"ArciumSignerAccount"],
+    bump,
+)]
+pub sign_pda_account: Account<'info, ArciumSignerAccount>,
+```
+
+**TypeScript Update Required:**
+
+```typescript
+// Update all PDA derivations
+const signPdaAccount = PublicKey.findProgramAddressSync(
+  [Buffer.from("ArciumSignerAccount")],  // NOT "SignerAccount"
+  programId
+)[0];
+```
+
+---
+
+### Issue 3: ClockAccount Must Be Mutable
+
+**Symptom:** `clock_account must be mutable` error during build.
+
+**Root Cause:** Arcium v0.6.2 requires the clock account to be mutable.
+
+#### ❌ Wrong: Read-only clock account
+
+```rust
+// BAD - Missing mut constraint
+#[account(address = ARCIUM_CLOCK_ACCOUNT_ADDRESS)]
+pub clock_account: Box<Account<'info, ClockAccount>>,
+```
+
+#### ✅ Correct: Mutable clock account
+
+```rust
+// GOOD - Add mut constraint
+#[account(mut, address = ARCIUM_CLOCK_ACCOUNT_ADDRESS)]
+pub clock_account: Box<Account<'info, ClockAccount>>,
+```
+
+---
+
+### Issue 4: Missing ID Import for Macros
+
+**Symptom:** `cannot find value ID in this scope` on `derive_mxe_pda!()` macro.
+
+**Root Cause:** Arcium macros require `crate::ID` to be in scope.
+
+#### ❌ Wrong: Only importing ID_CONST
+
+```rust
+// BAD - Missing ID import
+use crate::ID_CONST;
+```
+
+#### ✅ Correct: Import both ID and ID_CONST
+
+```rust
+// GOOD - Import both for macro compatibility
+use crate::{ID, ID_CONST};
+```
+
+---
+
+### Issue 5: Arcis Import Migration
+
+**Symptom:** Compilation errors in `encrypted-ixs/src/lib.rs`.
+
+**Root Cause:** The `arcis-imports` crate was renamed to `arcis` in v0.6.2.
+
+#### Cargo.toml Update
+
+```toml
+# Before (v0.5.x)
+arcis-imports = { version = "0.5.x", ... }
+
+# After (v0.6.2)
+arcis = { version = "0.6.2", ... }
+```
+
+#### Rust Import Update
+
+```rust
+// Before (v0.5.x)
+use arcis_imports::*;
+
+// After (v0.6.2)
+use arcis::*;
+```
+
+---
+
+### Quick Reference: Correct v0.6.2 Pattern
+
+```rust
+// src/instructions/deposit/accounts.rs (v0.6.2 pattern)
+use anchor_lang::prelude::*;
+use arcium_anchor::prelude::*;
+
+use crate::state::{Pool, UserObligation};
+use crate::ArciumSignerAccount;  // Re-exported from lib.rs
+use crate::{ID, ID_CONST};       // Both required for macros
+use crate::error::ErrorCode;
+
+#[queue_computation_accounts("compute_confidential_deposit", payer)]
+#[derive(Accounts)]
+pub struct Deposit<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    
+    // ... other accounts ...
+    
+    #[account(
+        init_if_needed,
+        space = 9,
+        payer = payer,
+        seeds = [b"ArciumSignerAccount"],  // Literal bytes, NOT constant
+        bump,
+    )]
+    pub sign_pda_account: Account<'info, ArciumSignerAccount>,
+    
+    #[account(mut, address = ARCIUM_CLOCK_ACCOUNT_ADDRESS)]  // Must be mut
+    pub clock_account: Box<Account<'info, ClockAccount>>,
+    
+    // ... rest of accounts ...
+}
+```
+
+```rust
+// src/lib.rs (v0.6.2 pattern)
+use anchor_lang::prelude::*;
+use arcium_anchor::prelude::*;
+
+declare_id!("YourProgramIdHere");
+
+// Re-export ArciumSignerAccount for use in instruction modules
+pub use arcium_anchor::prelude::ArciumSignerAccount;
+```
+
+---
+
+### Version Reference
+
+| Package | v0.5.x | v0.6.2+ |
+|---------|--------|---------|
+| `@arcium-hq/client` | `0.5.4` | `0.6.2` |
+| `arcis` (Cargo) | `arcis-imports` | `arcis` |
+| Type name | `SignerAccount` | `ArciumSignerAccount` |
+| PDA seed | `"SignerAccount"` | `"ArciumSignerAccount"` |

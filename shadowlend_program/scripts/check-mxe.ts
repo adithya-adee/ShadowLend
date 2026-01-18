@@ -1,6 +1,7 @@
 import { Connection, PublicKey } from "@solana/web3.js";
 import { getMXEAccAddress, getClusterAccAddress, getMXEPublicKey, getArciumProgramId } from "@arcium-hq/client";
 import * as anchor from "@coral-xyz/anchor";
+import { getMXEPublicKeyWithRetry } from "./lib";
 
 /**
  * MXE Account Diagnostic Script
@@ -18,7 +19,7 @@ import * as anchor from "@coral-xyz/anchor";
 async function checkMxe() {
     const connection = new Connection("https://api.devnet.solana.com", "confirmed");
     const programId = new PublicKey("J6hwZmTBYjDQdVdbeX7vuhpwpqgrhHUqQaUk8qYsZvXK");
-    const clusterOffset = 123;
+    const clusterOffset = 456;
     
     console.log("=== Arcium MXE Diagnostic ===\n");
     console.log("Our Program ID:", programId.toBase58());
@@ -53,7 +54,7 @@ async function checkMxe() {
     );
     
     try {
-        const mxePubkey = await getMXEPublicKey(provider, programId);
+        const mxePubkey = await getMXEPublicKeyWithRetry(provider, programId);
         if (mxePubkey && mxePubkey.length > 0) {
             // Check if it's all zeros
             const isZero = mxePubkey.every((b: number) => b === 0);

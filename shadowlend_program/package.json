@@ -7,14 +7,14 @@
     "lint:fix": "prettier */*.js \"*/**/*{.js,.ts}\" -w",
     "lint": "prettier */*.js \"*/**/*{.js,.ts}\" --check",
     "build": "anchor build",
-    "deploy": "ANCHOR_PROVIDER_URL=https://api.devnet.solana.com ANCHOR_WALLET=~/.config/solana/id.json ARCIUM_CLUSTER_OFFSET=123 ts-node scripts/deploy.ts",
-    "deploy:skip-comp": "ANCHOR_PROVIDER_URL=https://api.devnet.solana.com ANCHOR_WALLET=~/.config/solana/id.json ARCIUM_CLUSTER_OFFSET=123 ts-node scripts/deploy.ts --skip-comp-defs",
+    "deploy": "ANCHOR_PROVIDER_URL=https://api.devnet.solana.com ANCHOR_WALLET=~/.config/solana/id.json ARCIUM_CLUSTER_OFFSET=456 ts-node scripts/deploy.ts",
+    "deploy:skip-comp": "ANCHOR_PROVIDER_URL=https://api.devnet.solana.com ANCHOR_WALLET=~/.config/solana/id.json ARCIUM_CLUSTER_OFFSET=456 ts-node scripts/deploy.ts --skip-comp-defs",
     "deploy:local": "ANCHOR_PROVIDER_URL=http://127.0.0.1:8899 ANCHOR_WALLET=~/.config/solana/id.json ts-node scripts/deploy.ts",
-    "test:devnet": "ARCIUM_CLUSTER_OFFSET=123 ANCHOR_PROVIDER_URL=https://api.devnet.solana.com ANCHOR_WALLET=~/.config/solana/id.json ts-node scripts/test-devnet.ts",
+    "test:devnet": "ARCIUM_CLUSTER_OFFSET=456 ANCHOR_PROVIDER_URL=https://api.devnet.solana.com ANCHOR_WALLET=~/.config/solana/id.json ts-node scripts/test-devnet.ts",
     "verify": "ANCHOR_PROVIDER_URL=https://api.devnet.solana.com ANCHOR_WALLET=~/.config/solana/id.json ts-node scripts/verify-deployment.ts"
   },
   "dependencies": {
-    "@arcium-hq/client": "0.6.2",
+    "@arcium-hq/client": "0.6.3",
     "@coral-xyz/anchor": "^0.32.1",
     "@solana/spl-token": "^0.4.6",
     "@solana/web3.js": "^1.95.4"

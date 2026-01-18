@@ -35,7 +35,8 @@ pub fn repay_handler(
         ErrorCode::InvalidBorrowAmount
     );
 
-    // Set signer PDA bump for Arcium computation
+    // Set the bump for the sign_pda_account
+    ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
 
     // 1. Perform Public SPL Transfer (Atomic Repay)
     let transfer_accounts = token::Transfer {

@@ -38,6 +38,9 @@ pub fn deposit_handler(
         msg!("Initialized new user obligation");
     }
 
+    // Set the bump for the sign_pda_account
+    ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
+
     // Transfer tokens from user to collateral vault (public SPL transfer)
     let transfer_accounts = token::Transfer {
         from: ctx.accounts.user_token_account.to_account_info(),

@@ -35,6 +35,8 @@ pub const COMP_DEF_OFFSET_COMPUTE_LIQUIDATE: u32 = comp_def_offset("compute_conf
 /// Computation definition offset for interest circuit
 pub const COMP_DEF_OFFSET_COMPUTE_INTEREST: u32 = comp_def_offset("compute_confidential_interest");
 
+
+
 #[arcium_program]
 pub mod shadowlend_program {
     use super::*;

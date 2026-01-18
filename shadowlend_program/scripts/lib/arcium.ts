@@ -185,6 +185,9 @@ export function generateNonce(): Uint8Array {
 
 /**
  * Gets all Arcium-related accounts needed for a computation.
+ * 
+ * NOTE: compDefAccount uses OUR program ID as seed because Arcium's
+ * InitComputationDefinition validates the PDA using the calling program's ID.
  */
 export function getArciumAccounts(config: ArciumAccountsConfig): ArciumAccounts {
   const { programId, computationOffset, compDefName } = config;
@@ -199,12 +202,14 @@ export function getArciumAccounts(config: ArciumAccountsConfig): ArciumAccounts 
     mxeAccount: getMXEAccAddress(programId),
     mempoolAccount: getMempoolAccAddress(clusterOffset),
     executingPool: getExecutingPoolAccAddress(clusterOffset),
+    // Use OUR program ID as seed (Arcium program validates with calling program ID)
     compDefAccount: getCompDefAccAddress(programId, compDefOffsetNum),
   };
 }
 
 /**
  * Gets the computation definition PDA for a specific instruction.
+ * Uses our program ID as seed (consistent with Arcium's InitComputationDefinition)
  */
 export function getCompDefPda(
   programId: PublicKey,
@@ -214,6 +219,7 @@ export function getCompDefPda(
   const offset = getCompDefAccOffset(COMP_DEF_NAMES[compDefName]);
   const arciumProgramId = getArciumProgramId();
 
+  // Use our program ID as seed - Arcium validates this
   return PublicKey.findProgramAddressSync(
     [baseSeed, programId.toBuffer(), offset],
     arciumProgramId

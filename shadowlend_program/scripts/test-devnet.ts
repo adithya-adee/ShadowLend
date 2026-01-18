@@ -33,7 +33,6 @@ import {
   // PDA utilities  
   deriveObligationPda,
   deriveCollateralVaultPda,
-  deriveSignerPda,
   derivePoolPda,
   // Arcium utilities
   initializeArciumEnv,
@@ -126,8 +125,6 @@ async function testDeposit(
     program.programId
   );
 
-  const [signPda] = deriveSignerPda(program.programId);
-
   console.log(`   MXE Account: ${arciumAccounts.mxeAccount.toBase58()}`);
   console.log(`   Cluster: ${arciumAccounts.clusterAccount.toBase58()}`);
   console.log(`   Comp Def: ${arciumAccounts.compDefAccount.toBase58()}`);
@@ -153,7 +150,6 @@ async function testDeposit(
         mempoolAccount: arciumAccounts.mempoolAccount,
         executingPool: arciumAccounts.executingPool,
         compDefAccount: arciumAccounts.compDefAccount,
-        signPdaAccount: signPda,
       })
       .rpc({ commitment: "confirmed" });
 
@@ -233,8 +229,6 @@ async function testBorrow(
     program.programId
   );
 
-  const [signPda] = deriveSignerPda(program.programId);
-
   console.log(`   User Obligation: ${userObligationPda.toBase58()}`);
 
   // 6. Format for instruction
@@ -269,7 +263,6 @@ async function testBorrow(
         mempoolAccount: arciumAccounts.mempoolAccount,
         executingPool: arciumAccounts.executingPool,
         compDefAccount: arciumAccounts.compDefAccount,
-        signPdaAccount: signPda,
         solPriceUpdate: solPriceUpdate,
         usdcPriceUpdate: usdcPriceUpdate,
       })

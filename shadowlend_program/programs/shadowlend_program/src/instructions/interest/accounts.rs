@@ -3,7 +3,8 @@ use arcium_anchor::prelude::*;
 
 use crate::state::{Pool, UserObligation};
 use crate::{SignerAccount, ID};
-use arcium_client::idl::arcium::ID_CONST;
+use crate::ID_CONST;
+
 
 use crate::error::ErrorCode;
 
@@ -32,7 +33,13 @@ pub struct UpdateInterest<'info> {
     pub user_obligation: Box<Account<'info, UserObligation>>,
 
     // === Arcium MXE Accounts ===
-    #[account(address = derive_sign_pda!())]
+    #[account(
+        init_if_needed,
+        space = 9,
+        payer = payer,
+        seeds = [&SIGN_PDA_SEED],
+        bump,
+    )]
     pub sign_pda_account: Account<'info, SignerAccount>,
 
     #[account(address = derive_mxe_pda!())]

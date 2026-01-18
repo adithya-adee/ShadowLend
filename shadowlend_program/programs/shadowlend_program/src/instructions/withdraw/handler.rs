@@ -42,7 +42,8 @@ pub fn withdraw_handler(
         ErrorCode::InvalidWithdrawAmount
     );
 
-    // Set signer PDA bump for Arcium computation
+    // Set the bump for the sign_pda_account
+    ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
 
     // Read encrypted state from on-chain UserObligation (prevent state injection attack)
     let mut encrypted_state = [0u8; 64];

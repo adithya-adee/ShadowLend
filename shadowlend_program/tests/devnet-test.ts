@@ -273,7 +273,7 @@ async function testDeposit(
         executingPool: executingPool,
         compDefAccount: compDefAccount,
         signPdaAccount: PublicKey.findProgramAddressSync(
-          [Buffer.from("SignerAccount")],
+          [Buffer.from("ArciumSignerAccount")],
           program.programId
         )[0],      })
       .rpc({ commitment: "confirmed" });
@@ -416,7 +416,7 @@ async function testBorrow(
 
         compDefAccount: compDefAccount,
         signPdaAccount: PublicKey.findProgramAddressSync(
-          [Buffer.from("SignerAccount")],
+          [Buffer.from("ArciumSignerAccount")],
           program.programId
         )[0],
         solPriceUpdate: solPriceUpdate,

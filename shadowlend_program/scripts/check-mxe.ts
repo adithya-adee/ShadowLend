@@ -5,7 +5,7 @@ import * as anchor from "@coral-xyz/anchor";
 /**
  * MXE Account Diagnostic Script
  * 
- * Per Arcium v0.5.1 docs:
+ * Per Arcium v0.6.2 docs:
  * - getMXEAccAddress(program.programId) - Uses YOUR program ID (each program has its own MXE)
  * - getMempoolAccAddress(clusterOffset) - Uses cluster offset
  * - getExecutingPoolAccAddress(clusterOffset) - Uses cluster offset

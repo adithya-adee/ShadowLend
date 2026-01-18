@@ -22,9 +22,9 @@ custom-panic = []
 [dependencies]
 anchor-lang = { version = "0.32.1", features = ["init-if-needed"] }
 anchor-spl = { version = "0.32.1", features = ["token"] }
-arcium-client = { default-features = false, version = "0.5.4" }
-arcium-macros = "0.5.4"
-arcium-anchor = "0.5.4"
+arcium-client = { default-features = false, version = "0.6.3" }
+arcium-macros = "0.6.3"
+arcium-anchor = "0.6.3"
 blake3 = "=1.5.5"
 solana-keccak-hasher = "2.1.0"
 hex-literal = "0.4"

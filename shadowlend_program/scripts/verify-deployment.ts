@@ -5,7 +5,7 @@
  * Verifies all PDAs and accounts are correctly initialized.
  * 
  * Compatible with:
- * - Arcium SDK v0.5.4
+ * - Arcium SDK v0.6.2
  * - Anchor v0.32.x
  * 
  * Usage:

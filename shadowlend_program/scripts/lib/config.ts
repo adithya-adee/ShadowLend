@@ -2,7 +2,7 @@
  * ShadowLend Configuration
  * 
  * Central configuration for program IDs, network settings, and constants.
- * Compatible with Arcium SDK v0.5.4 and Anchor v0.32.x
+ * Compatible with Arcium SDK v0.6.2 and Anchor v0.32.x
  */
 
 import { PublicKey } from "@solana/web3.js";
@@ -46,7 +46,7 @@ export const PDA_SEEDS = {
   obligation: Buffer.from("obligation"),
   collateral: Buffer.from("collateral"),
   borrow: Buffer.from("borrow"),
-  signerAccount: Buffer.from("SignerAccount"),
+  signerAccount: Buffer.from("ArciumSignerAccount"),
 } as const;
 
 // ============================================================

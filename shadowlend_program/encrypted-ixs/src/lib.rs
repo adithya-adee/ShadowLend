@@ -16,11 +16,11 @@
 //! - Individual balances remain encrypted
 //! - Health factor calculations happen privately
 //! - Only approved amounts are revealed for SPL transfers
-use arcis_imports::*;
+use arcis::*;
 
 #[encrypted]
 mod circuits {
-    use arcis_imports::*;
+    use arcis::*;
 
     // ============================================================
     // Shared Types

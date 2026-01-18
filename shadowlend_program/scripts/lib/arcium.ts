@@ -2,7 +2,7 @@
  * ShadowLend Arcium Utilities
  * 
  * Functions for interacting with Arcium MXE, encryption, and computations.
- * Compatible with Arcium SDK v0.5.4
+ * Compatible with Arcium SDK v0.6.2
  */
 
 import * as anchor from "@coral-xyz/anchor";

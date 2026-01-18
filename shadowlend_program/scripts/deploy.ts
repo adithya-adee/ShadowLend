@@ -8,7 +8,7 @@
  * 3. Initializes lending pool with vaults
  * 
  * Compatible with:
- * - Arcium SDK v0.5.4
+ * - Arcium SDK v0.6.2
  * - Anchor v0.32.x
  * - @solana/web3.js v1.x
  * 

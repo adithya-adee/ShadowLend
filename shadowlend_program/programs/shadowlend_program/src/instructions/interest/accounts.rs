@@ -2,8 +2,8 @@ use anchor_lang::prelude::*;
 use arcium_anchor::prelude::*;
 
 use crate::state::{Pool, UserObligation};
-use crate::{SignerAccount, ID};
-use crate::ID_CONST;
+use crate::ArciumSignerAccount;
+use crate::{ID, ID_CONST};
 
 
 use crate::error::ErrorCode;
@@ -37,10 +37,10 @@ pub struct UpdateInterest<'info> {
         init_if_needed,
         space = 9,
         payer = payer,
-        seeds = [&SIGN_PDA_SEED],
+        seeds = [b"ArciumSignerAccount"],
         bump,
     )]
-    pub sign_pda_account: Account<'info, SignerAccount>,
+    pub sign_pda_account: Account<'info, ArciumSignerAccount>,
 
     #[account(address = derive_mxe_pda!())]
     pub mxe_account: Box<Account<'info, MXEAccount>>,
@@ -66,7 +66,7 @@ pub struct UpdateInterest<'info> {
     #[account(mut, address = ARCIUM_FEE_POOL_ACCOUNT_ADDRESS)]
     pub pool_account: Box<Account<'info, FeePool>>,
 
-    #[account(address = ARCIUM_CLOCK_ACCOUNT_ADDRESS)]
+    #[account(mut, address = ARCIUM_CLOCK_ACCOUNT_ADDRESS)]
     pub clock_account: Box<Account<'info, ClockAccount>>,
 
     // === Programs ===

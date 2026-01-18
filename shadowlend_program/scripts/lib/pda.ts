@@ -2,7 +2,7 @@
  * ShadowLend PDA Utilities
  * 
  * Functions for deriving Program Derived Addresses (PDAs).
- * Compatible with Arcium SDK v0.5.4 and Anchor v0.32.x
+ * Compatible with Arcium SDK v0.6.2 and Anchor v0.32.x
  */
 
 import { PublicKey } from "@solana/web3.js";
@@ -81,7 +81,7 @@ export function deriveObligationPda(
 
 /**
  * Derives the Arcium Signer PDA.
- * Seeds: ["SignerAccount"]
+ * Seeds: ["ArciumSignerAccount"]
  * 
  * NOTE: This uses our program ID because the Anchor `seeds` constraint validates
  * using the current program's address.
@@ -90,7 +90,7 @@ export function deriveSignerPda(
   programId: PublicKey = PROGRAM_ID
 ): [PublicKey, number] {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from("SignerAccount")],
+    [Buffer.from("ArciumSignerAccount")],
     programId
   );
 }

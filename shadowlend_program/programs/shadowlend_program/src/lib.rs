@@ -11,7 +11,7 @@ pub use constants::*;
 pub use instructions::*;
 pub use state::*;
 
-declare_id!("J6hwZmTBYjDQdVdbeX7vuhpwpqgrhHUqQaUk8qYsZvXK");
+declare_id!("EQTzqTGWEop1b6Cfw2SJPGJD69nHRu5Dp7Vg5sq6zZBm");
 
 // ============================================================
 // Computation Definition Offsets for Arcium MXE

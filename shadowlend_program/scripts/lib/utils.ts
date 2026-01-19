@@ -173,15 +173,18 @@ export function createProgram(
  * Sets defaults for Devnet if not specified.
  */
 export function setupProvider(): anchor.AnchorProvider {
-  // Set default env vars if not present
-  if (!process.env.ANCHOR_PROVIDER_URL) {
-    process.env.ANCHOR_PROVIDER_URL = "https://api.devnet.solana.com";
-  }
-  if (!process.env.ANCHOR_WALLET) {
-    process.env.ANCHOR_WALLET = process.env.HOME + "/.config/solana/id.json";
-  }
+  // Always force Devnet URL from config
+  const rpcUrl = NETWORKS.devnet.rpcUrl;
+  const connection = new Connection(rpcUrl, "confirmed");
+  
+  const walletPath = process.env.ANCHOR_WALLET || process.env.HOME + "/.config/solana/id.json";
+  const wallet = new anchor.Wallet(loadKeypair(walletPath));
 
-  const provider = anchor.AnchorProvider.env();
+  const provider = new anchor.AnchorProvider(connection, wallet, {
+    commitment: "confirmed",
+    preflightCommitment: "confirmed",
+  });
+  
   anchor.setProvider(provider);
   return provider;
 }

@@ -17,12 +17,17 @@ import {
   USDC_MINT,
   DEFAULT_POOL_CONFIG,
   COMP_DEF_NAMES,
+  ARCIUM_CLUSTER_OFFSET,
   // PDA utilities
   deriveAllPoolPdas,
   // Arcium utilities
   initializeArciumEnv,
   getCompDefPda,
   getMXEAccAddress,
+  getArciumProgramId,
+  getClusterAccAddress,
+  getMempoolAccAddress,
+  getExecutingPoolAccAddress,
   buildFinalizeCompDefTransaction,
   // Common utilities
   setupProvider,
@@ -60,7 +65,7 @@ const COMP_DEFS: CompDefConfig[] = [
   { name: "Borrow", method: "initComputeBorrowCompDef", arciumKey: "borrow" },
   { name: "Withdraw", method: "initComputeWithdrawCompDef", arciumKey: "withdraw" },
   { name: "Repay", method: "initComputeRepayCompDef", arciumKey: "repay" },
-  // { name: "Liquidate", method: "initComputeLiquidateCompDef", arciumKey: "liquidate" },
+  { name: "Liquidate", method: "initComputeLiquidateCompDef", arciumKey: "liquidate" },
   { name: "Interest", method: "initComputeInterestCompDef", arciumKey: "interest" },
 ];
 
@@ -82,13 +87,23 @@ async function initializeCompDefs(
       console.log(chalk.gray(`   ${icons.dot} ${compDef.name}...`));
 
       const compDefPda = getCompDefPda(program.programId, compDef.arciumKey);
-      const mxeAccount = getMXEAccAddress(program.programId);
+      console.log(chalk.gray(`     PDA: ${compDefPda.toBase58()}`));
+      const mxeAccount = getMXEAccAddress(program.programId); 
+      
+      const clusterAccount = getClusterAccAddress(ARCIUM_CLUSTER_OFFSET);
+      const mempoolAccount = getMempoolAccAddress(ARCIUM_CLUSTER_OFFSET);
+      const executingPool = getExecutingPoolAccAddress(ARCIUM_CLUSTER_OFFSET);
+      const arciumProgramId = getArciumProgramId();
 
-      // Check if already initialized
+      // Check if already initialized AND owned by Arcium
       const accountInfo = await provider.connection.getAccountInfo(compDefPda);
       if (accountInfo) {
-        console.log(chalk.yellow(`     ${icons.warning} Already initialized`));
-        continue;
+        if (accountInfo.owner.equals(arciumProgramId)) {
+           console.log(chalk.yellow(`     ${icons.warning} Already initialized`));
+           continue;       
+        } else {
+           console.log(chalk.yellow(`     ${icons.warning} Account exists but not owned by Arcium. Re-initializing...`));
+        }
       }
 
       // Initialize computation definition
@@ -98,7 +113,12 @@ async function initializeCompDefs(
           systemProgram: SystemProgram.programId,
           compDefAccount: compDefPda,
           mxeAccount: mxeAccount,
+          // Arcium required accounts for context
+          clusterAccount,
+          mempoolAccount,
+          executingPool,
         })
+        .preInstructions([anchor.web3.ComputeBudgetProgram.setComputeUnitLimit({ units: 1_400_000 })])
         .rpc();
 
       console.log(chalk.green(`     ${icons.checkmark} Initialized (tx: ${formatSignature(tx)})`));

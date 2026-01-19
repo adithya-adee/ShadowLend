@@ -273,4 +273,7 @@ export {
   getArciumProgramId,
   getArciumAccountBaseSeed,
   getCompDefAccOffset,
+  getClusterAccAddress,
+  getMempoolAccAddress,
+  getExecutingPoolAccAddress,
 };

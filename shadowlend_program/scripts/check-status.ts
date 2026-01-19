@@ -113,8 +113,9 @@ async function main() {
     const mxePublicKey = await getMXEPublicKey(provider, PROGRAM_ID);
     
     if (mxePublicKey && mxePublicKey.length > 0 && !mxePublicKey.every(b => b === 0)) {
-       // const mxePublicKeyHex = Buffer.from(mxePublicKey).toString("hex");
+       const mxePublicKeyHex = Buffer.from(mxePublicKey).toString("hex");
        logSuccess(`DKG Complete (Public Key Set)`);
+       console.log(chalk.gray(`     Key: ${mxePublicKeyHex}`));
     } else {
        logError("DKG Incomplete (No Public Key)");
        logWarning("Nodes must complete key generation. Wait a few moments.");

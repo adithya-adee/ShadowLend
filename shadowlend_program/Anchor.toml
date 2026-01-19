@@ -6,10 +6,10 @@ resolution = true
 skip-lint = false
 
 [programs.devnet]
-shadowlend_program = "EQTzqTGWEop1b6Cfw2SJPGJD69nHRu5Dp7Vg5sq6zZBm"
+shadowlend_program = "EeTbMXq1M2RffanXbU6EdTzBtdafMxc47YZ2faK1ioxy"
 
 [programs.localnet]
-shadowlend_program = "EQTzqTGWEop1b6Cfw2SJPGJD69nHRu5Dp7Vg5sq6zZBm"
+shadowlend_program = "EeTbMXq1M2RffanXbU6EdTzBtdafMxc47YZ2faK1ioxy"
 
 [registry]
 url = "https://api.apr.dev"

@@ -380,7 +380,8 @@ async function main() {
       await new Promise((resolve) => setTimeout(resolve, 10000));
 
       // Test 2: Borrow
-      await testBorrow(program, provider, payer, poolPda);
+      // await testBorrow(program, provider, payer, poolPda);
+      console.log("\n⏭️  Skipping borrow test (user requested deposit only)");
     } else {
       console.log("\n⏭️  Skipping borrow test (deposit was not successful)");
     }

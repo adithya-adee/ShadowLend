@@ -65,12 +65,12 @@ pub fn update_interest_callback_handler(
 
     msg!("MXE interest computation verified");
 
-    // Access user output (field_0 of the tuple struct)
-    // field_0: ConfidentialInterestOutput (Shared), field_1: PoolState (MXE)
+    // Access user output (field_0 of the tuple struct) and pool output (field_1)
     let user_output = &result.field_0;
+    let pool_output = &result.field_1;
 
     require!(
-        !user_output.ciphertexts.is_empty(),
+        user_output.ciphertexts.len() >= 5,
         ErrorCode::InvalidComputationOutput
     );
 
@@ -81,18 +81,48 @@ pub fn update_interest_callback_handler(
         .checked_add(1)
         .ok_or(ErrorCode::MathOverflow)?;
 
-    let state_ciphertexts: Vec<u8> = user_output.ciphertexts[..4]
+    // Store encrypted user state as fixed-size array
+    user_obligation.encrypted_state_blob = [
+        user_output.ciphertexts[0],
+        user_output.ciphertexts[1],
+        user_output.ciphertexts[2],
+        user_output.ciphertexts[3],
+    ];
+
+    // Compute keccak256 commitment of encrypted user state (flatten array for hashing)
+    let state_bytes: Vec<u8> = user_obligation
+        .encrypted_state_blob
         .iter()
         .flat_map(|c| c.to_vec())
         .collect();
-    user_obligation.encrypted_state_blob = state_ciphertexts;
-
-    // Compute keccak256 commitment of encrypted state (cryptographically secure)
-    let commitment = hashv(&[&user_obligation.encrypted_state_blob]);
+    let commitment = hashv(&[&state_bytes]);
     user_obligation.state_commitment = commitment.to_bytes();
     user_obligation.last_update_ts = Clock::get()?.unix_timestamp;
 
+    // Update pool state
     let pool = &mut ctx.accounts.pool;
+    require!(
+        !pool_output.ciphertexts.is_empty(),
+        ErrorCode::InvalidComputationOutput
+    );
+
+    // Store encrypted pool state as fixed-size array
+    pool.encrypted_pool_state = [
+        pool_output.ciphertexts[0],
+        pool_output.ciphertexts[1],
+        pool_output.ciphertexts[2],
+        pool_output.ciphertexts[3],
+    ];
+    pool.pool_state_initialized = true;
+
+    // Compute keccak256 commitment of encrypted pool state
+    let pool_state_bytes: Vec<u8> = pool
+        .encrypted_pool_state
+        .iter()
+        .flat_map(|c| c.to_vec())
+        .collect();
+    let pool_commitment = hashv(&[&pool_state_bytes]);
+    pool.pool_state_commitment = pool_commitment.to_bytes();
     pool.last_update_ts = Clock::get()?.unix_timestamp;
 
     emit!(InterestUpdated {

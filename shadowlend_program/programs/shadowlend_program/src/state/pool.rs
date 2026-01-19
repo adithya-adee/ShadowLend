@@ -25,11 +25,15 @@ pub struct Pool {
     pub borrow_mint: Pubkey,
 
     // --- Encrypted Aggregates ---
-    /// Encrypted pool state containing totals (max 128 bytes)
-    #[max_len(128)]
-    pub encrypted_pool_state: Vec<u8>,
+    /// Encrypted pool state containing totals (4 x [u8; 32] for 4 u128 fields)
+    /// Fields: [total_deposits, total_borrows, accumulated_interest, available_borrow_liquidity]
+    pub encrypted_pool_state: [[u8; 32]; 4],
     /// Keccak256 commitment for encrypted state verification
     pub pool_state_commitment: [u8; 32],
+    /// Whether the pool state has been initialized (first deposit)
+    pub pool_state_initialized: bool,
+    /// MXE encryption nonce for pool state (Enc<Mxe, PoolState>)
+    pub mxe_nonce: u128,
 
     // --- Risk Parameters (Public) ---
     /// Loan-to-Value ratio in basis points (80% = 8000)
@@ -54,6 +58,10 @@ pub struct Pool {
 
 impl Pool {
     pub const SEED_PREFIX: &'static [u8] = b"pool";
+    /// Offset of encrypted_pool_state in account data: 8 (disc) + 32 (auth) + 32 (col_mint) + 32 (bor_mint) = 104
+    pub const ENCRYPTED_STATE_OFFSET: u64 = 104;
+    /// Size of encrypted_pool_state: 4 * 32 = 128 bytes
+    pub const ENCRYPTED_STATE_SIZE: u64 = 128;
 }
 
 /// Plaintext structure that gets encrypted inside encrypted_pool_state

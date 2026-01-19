@@ -5,6 +5,7 @@ use arcium_anchor::prelude::*;
 use super::accounts::Repay;
 use super::callback::ComputeConfidentialRepayCallback;
 use crate::error::ErrorCode;
+use crate::state::{Pool, UserObligation};
 
 /// Handles repayment by transferring tokens and queuing MXE state update.
 ///
@@ -21,13 +22,15 @@ use crate::error::ErrorCode;
 /// * `computation_offset` - Unique offset for this MXE computation
 /// * `amount` - Plaintext repayment amount (visible in SPL transfer)
 /// * `user_pubkey` - User's x25519 public key for encrypting output
-/// * `nonce` - Encryption nonce
+/// * `user_nonce` - Encryption nonce for user state (Enc<Shared, UserState>)
+/// * `mxe_nonce` - Encryption nonce for pool state (Enc<Mxe, PoolState>)
 pub fn repay_handler(
     ctx: Context<Repay>,
     computation_offset: u64,
     amount: u64,
     user_pubkey: [u8; 32],
-    nonce: u128,
+    user_nonce: u128,
+    mxe_nonce: u128,
 ) -> Result<()> {
     // Validate repay amount
     require!(amount > 0, ErrorCode::InvalidBorrowAmount);
@@ -35,7 +38,7 @@ pub fn repay_handler(
     // User must have existing state with borrow
     let user_obligation = &ctx.accounts.user_obligation;
     require!(
-        !user_obligation.encrypted_state_blob.is_empty(),
+        user_obligation.user_state_initialized,
         ErrorCode::InvalidBorrowAmount
     );
 
@@ -56,41 +59,40 @@ pub fn repay_handler(
         amount,
     )?;
 
-    // Read encrypted state from on-chain UserObligation (prevent state injection attack)
-    // UserState has 4 u128 fields = 4 * 32 = 128 bytes
-    let mut encrypted_state = [0u8; 128];
-    let len = user_obligation.encrypted_state_blob.len().min(128);
-    encrypted_state[..len].copy_from_slice(&user_obligation.encrypted_state_blob[..len]);
-
-    // Read pool state (MXE only)
-    // PoolState has 4 u128 fields = 4 * 32 = 128 bytes
     let pool = &ctx.accounts.pool;
-    let encrypted_pool_state: [u8; 128] = if pool.encrypted_pool_state.is_empty() {
-        [0u8; 128]
-    } else {
-        let mut state_arr = [0u8; 128];
-        let len = pool.encrypted_pool_state.len().min(128);
-        state_arr[..len].copy_from_slice(&pool.encrypted_pool_state[..len]);
-        state_arr
-    };
 
     // Build arguments for Arcium MXE computation
-    // Order: amount, user_state (with pubkey+nonce) [4 chunks], pool_state [4 chunks]
-    let args = ArgBuilder::new()
+    let mut args = ArgBuilder::new()
         .plaintext_u64(amount)
         .x25519_pubkey(user_pubkey)
-        .plaintext_u128(nonce)
-        // 4 encrypted u128 for UserState
-        .encrypted_u128(encrypted_state[0..32].try_into().unwrap())
-        .encrypted_u128(encrypted_state[32..64].try_into().unwrap())
-        .encrypted_u128(encrypted_state[64..96].try_into().unwrap())
-        .encrypted_i64(encrypted_state[96..128].try_into().unwrap())
-        // 4 encrypted u128 for PoolState
-        .encrypted_u128(encrypted_pool_state[0..32].try_into().unwrap())
-        .encrypted_u128(encrypted_pool_state[32..64].try_into().unwrap())
-        .encrypted_u128(encrypted_pool_state[64..96].try_into().unwrap())
-        .encrypted_u128(encrypted_pool_state[96..128].try_into().unwrap())
-        .build();
+        .plaintext_u128(user_nonce);
+
+    // User state - always initialized for repay (checked above)
+    // Pass by reference using account(key, offset, length)
+    args = args.account(
+        user_obligation.key(),
+        UserObligation::ENCRYPTED_STATE_OFFSET as u32,
+        UserObligation::ENCRYPTED_STATE_SIZE as u32,
+    );
+
+    // Enc<Mxe, PoolState> - MXE-only encryption with mxe_nonce
+    args = args.plaintext_u128(mxe_nonce);
+
+    // Pool state - check if initialized
+    args = if pool.pool_state_initialized {
+        args.account(
+            pool.key(),
+            Pool::ENCRYPTED_STATE_OFFSET as u32,
+            Pool::ENCRYPTED_STATE_SIZE as u32,
+        )
+    } else {
+        args.encrypted_u128([0u8; 32])
+            .encrypted_u128([0u8; 32])
+            .encrypted_u128([0u8; 32])
+            .encrypted_u128([0u8; 32])
+    };
+
+    let args = args.build();
 
     // Queue computation with callback instruction
     queue_computation(

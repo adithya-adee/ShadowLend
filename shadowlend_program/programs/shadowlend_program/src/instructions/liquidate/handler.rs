@@ -6,6 +6,7 @@ use super::accounts::Liquidate;
 use super::callback::ComputeConfidentialLiquidateCallback;
 use crate::constants::{get_price_from_pyth_account, SOL_USD_FEED_ID, USDC_USD_FEED_ID};
 use crate::error::ErrorCode;
+use crate::state::{Pool, UserObligation};
 
 /// Handles liquidation by queuing MXE computation to verify undercollateralization.
 ///
@@ -22,13 +23,15 @@ use crate::error::ErrorCode;
 /// * `computation_offset` - Unique offset for this MXE computation
 /// * `repay_amount` - Amount of borrow token to repay (plaintext)
 /// * `target_user_pubkey` - Target user's x25519 public key for encrypting output
-/// * `nonce` - Encryption nonce
+/// * `user_nonce` - Encryption nonce for user state (Enc<Shared, UserState>)
+/// * `mxe_nonce` - Encryption nonce for pool state (Enc<Mxe, PoolState>)
 pub fn liquidate_handler(
     ctx: Context<Liquidate>,
     computation_offset: u64,
     repay_amount: u64,
     target_user_pubkey: [u8; 32],
-    nonce: u128,
+    user_nonce: u128,
+    mxe_nonce: u128,
 ) -> Result<()> {
     // Validate repay amount
     require!(repay_amount > 0, ErrorCode::InvalidBorrowAmount);
@@ -36,7 +39,7 @@ pub fn liquidate_handler(
     // User being liquidated must have existing state
     let user_obligation = &ctx.accounts.user_obligation;
     require!(
-        !user_obligation.encrypted_state_blob.is_empty(),
+        user_obligation.user_state_initialized,
         ErrorCode::InvalidBorrowAmount
     );
 
@@ -59,27 +62,10 @@ pub fn liquidate_handler(
     // Set the bump for the sign_pda_account
     ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
 
-    // Read encrypted state from on-chain UserObligation
-    // UserState has 4 u128 fields = 4 * 32 = 128 bytes
-    let mut encrypted_state = [0u8; 128];
-    let len = user_obligation.encrypted_state_blob.len().min(128);
-    encrypted_state[..len].copy_from_slice(&user_obligation.encrypted_state_blob[..len]);
-
     // Get pool parameters for liquidation calculation
     let pool = &ctx.accounts.pool;
     let liquidation_threshold = pool.liquidation_threshold;
     let liquidation_bonus = pool.liquidation_bonus;
-
-    // Read pool state (MXE only)
-    // PoolState has 4 u128 fields = 4 * 32 = 128 bytes
-    let encrypted_pool_state: [u8; 128] = if pool.encrypted_pool_state.is_empty() {
-        [0u8; 128]
-    } else {
-        let mut state_arr = [0u8; 128];
-        let len = pool.encrypted_pool_state.len().min(128);
-        state_arr[..len].copy_from_slice(&pool.encrypted_pool_state[..len]);
-        state_arr
-    };
 
     // Read real-time prices from Pyth oracles
     let clock = Clock::get()?;
@@ -95,21 +81,37 @@ pub fn liquidate_handler(
     )?;
 
     // Build arguments for Arcium MXE computation
-    // Order: repay_amount, state (with pubkey+nonce) [4 chunks], pool_state [4 chunks], prices, liquidation params
-    let args = ArgBuilder::new()
+    let mut args = ArgBuilder::new()
         .plaintext_u64(repay_amount)
         .x25519_pubkey(target_user_pubkey)
-        .plaintext_u128(nonce)
-        // 4 encrypted u128 for UserState
-        .encrypted_u128(encrypted_state[0..32].try_into().unwrap())
-        .encrypted_u128(encrypted_state[32..64].try_into().unwrap())
-        .encrypted_u128(encrypted_state[64..96].try_into().unwrap())
-        .encrypted_i64(encrypted_state[96..128].try_into().unwrap())
-        // 4 encrypted u128 for PoolState
-        .encrypted_u128(encrypted_pool_state[0..32].try_into().unwrap())
-        .encrypted_u128(encrypted_pool_state[32..64].try_into().unwrap())
-        .encrypted_u128(encrypted_pool_state[64..96].try_into().unwrap())
-        .encrypted_u128(encrypted_pool_state[96..128].try_into().unwrap())
+        .plaintext_u128(user_nonce);
+
+    // User state - always initialized for liquidate (checked above)
+    // Pass by reference using account(key, offset, length)
+    args = args.account(
+        user_obligation.key(),
+        UserObligation::ENCRYPTED_STATE_OFFSET as u32,
+        UserObligation::ENCRYPTED_STATE_SIZE as u32,
+    );
+
+    // Enc<Mxe, PoolState> - MXE-only encryption with mxe_nonce
+    args = args.plaintext_u128(mxe_nonce);
+
+    // Pool state - check if initialized
+    args = if pool.pool_state_initialized {
+        args.account(
+            pool.key(),
+            Pool::ENCRYPTED_STATE_OFFSET as u32,
+            Pool::ENCRYPTED_STATE_SIZE as u32,
+        )
+    } else {
+        args.encrypted_u128([0u8; 32])
+            .encrypted_u128([0u8; 32])
+            .encrypted_u128([0u8; 32])
+            .encrypted_u128([0u8; 32])
+    };
+
+    let args = args
         .plaintext_u64(sol_price_cents)
         .plaintext_u64(usdc_price_cents)
         .plaintext_u64(liquidation_threshold as u64)

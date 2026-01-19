@@ -75,9 +75,11 @@ pub fn initialize_pool_handler(
     pool.collateral_mint = ctx.accounts.collateral_mint.key();
     pool.borrow_mint = ctx.accounts.borrow_mint.key();
 
-    // Initialize encrypted pool state to empty (will be populated by first MXE computation)
-    pool.encrypted_pool_state = vec![];
+    // Initialize encrypted pool state to zeros (will be populated by first MXE computation)
+    pool.encrypted_pool_state = [[0u8; 32]; 4];
     pool.pool_state_commitment = [0u8; 32];
+    pool.pool_state_initialized = false;
+    pool.mxe_nonce = 0;
 
     // Set risk parameters (remain public for transparency)
     pool.ltv = ltv;

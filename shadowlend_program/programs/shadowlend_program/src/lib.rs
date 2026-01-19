@@ -104,9 +104,17 @@ pub mod shadowlend_program {
         computation_offset: u64,
         amount: u64,
         user_pubkey: [u8; 32],
-        nonce: u128,
+        user_nonce: u128,
+        mxe_nonce: u128,
     ) -> Result<()> {
-        instructions::deposit::deposit_handler(ctx, computation_offset, amount, user_pubkey, nonce)
+        instructions::deposit::deposit_handler(
+            ctx,
+            computation_offset,
+            amount,
+            user_pubkey,
+            user_nonce,
+            mxe_nonce,
+        )
     }
 
     /// Callback from Arcium MXE after deposit computation completes
@@ -129,14 +137,16 @@ pub mod shadowlend_program {
         computation_offset: u64,
         encrypted_amount: [u8; 32],
         pub_key: [u8; 32],
-        nonce: u128,
+        user_nonce: u128,
+        mxe_nonce: u128,
     ) -> Result<()> {
         instructions::borrow::borrow_handler(
             ctx,
             computation_offset,
             encrypted_amount,
             pub_key,
-            nonce,
+            user_nonce,
+            mxe_nonce,
         )
     }
 
@@ -160,14 +170,16 @@ pub mod shadowlend_program {
         computation_offset: u64,
         encrypted_amount: [u8; 32],
         pub_key: [u8; 32],
-        nonce: u128,
+        user_nonce: u128,
+        mxe_nonce: u128,
     ) -> Result<()> {
         instructions::withdraw::withdraw_handler(
             ctx,
             computation_offset,
             encrypted_amount,
             pub_key,
-            nonce,
+            user_nonce,
+            mxe_nonce,
         )
     }
 
@@ -191,9 +203,17 @@ pub mod shadowlend_program {
         computation_offset: u64,
         amount: u64,
         user_pubkey: [u8; 32],
-        nonce: u128,
+        user_nonce: u128,
+        mxe_nonce: u128,
     ) -> Result<()> {
-        instructions::repay::repay_handler(ctx, computation_offset, amount, user_pubkey, nonce)
+        instructions::repay::repay_handler(
+            ctx,
+            computation_offset,
+            amount,
+            user_pubkey,
+            user_nonce,
+            mxe_nonce,
+        )
     }
 
     /// Callback from Arcium MXE after repay computation completes
@@ -216,14 +236,16 @@ pub mod shadowlend_program {
         computation_offset: u64,
         repay_amount: u64,
         target_user_pubkey: [u8; 32],
-        nonce: u128,
+        user_nonce: u128,
+        mxe_nonce: u128,
     ) -> Result<()> {
         instructions::liquidate::liquidate_handler(
             ctx,
             computation_offset,
             repay_amount,
             target_user_pubkey,
-            nonce,
+            user_nonce,
+            mxe_nonce,
         )
     }
 
@@ -246,9 +268,16 @@ pub mod shadowlend_program {
         ctx: Context<UpdateInterest>,
         computation_offset: u64,
         user_pubkey: [u8; 32],
-        nonce: u128,
+        user_nonce: u128,
+        mxe_nonce: u128,
     ) -> Result<()> {
-        instructions::interest::update_interest_handler(ctx, computation_offset, user_pubkey, nonce)
+        instructions::interest::update_interest_handler(
+            ctx,
+            computation_offset,
+            user_pubkey,
+            user_nonce,
+            mxe_nonce,
+        )
     }
 
     /// Callback from Arcium MXE after interest computation completes

@@ -23,11 +23,13 @@ pub struct UserObligation {
     pub pool: Pubkey,
 
     // --- Encrypted State ---
-    /// Encrypted user state blob (max 128 bytes)
-    #[max_len(128)]
-    pub encrypted_state_blob: Vec<u8>,
+    /// Encrypted user state (4 x [u8; 32] for 4 fields)
+    /// Fields: [deposit_amount, borrow_amount, accrued_interest, last_interest_calc_ts]
+    pub encrypted_state_blob: [[u8; 32]; 4],
     /// Keccak256 commitment for encrypted state verification
     pub state_commitment: [u8; 32],
+    /// Whether the user state has been initialized (first deposit)
+    pub user_state_initialized: bool,
 
     // --- Public Funding Tracker ---
     /// Cumulative tokens deposited to vault (public, for SPL verification)
@@ -53,6 +55,10 @@ pub struct UserObligation {
 
 impl UserObligation {
     pub const SEED_PREFIX: &'static [u8] = b"obligation";
+    /// Offset of encrypted_state_blob in account data: 8 (disc) + 32 (user) + 32 (pool) = 72
+    pub const ENCRYPTED_STATE_OFFSET: u64 = 72;
+    /// Size of encrypted_state_blob: 4 * 32 = 128 bytes
+    pub const ENCRYPTED_STATE_SIZE: u64 = 128;
 }
 
 /// Plaintext structure that gets encrypted inside the blob
@@ -66,5 +72,5 @@ pub struct UserState {
     /// Accrued interest on borrow (hidden)
     pub accrued_interest: u128,
     /// Timestamp of last interest calculation
-    pub last_interest_calc_ts: i64,
+    pub last_interest_calc_ts: u128,
 }

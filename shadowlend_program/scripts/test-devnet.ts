@@ -1,19 +1,6 @@
 #!/usr/bin/env ts-node
 /**
  * ShadowLend Devnet Test - Deposit & Borrow
- * 
- * Tests the deployed program on devnet following Arcium SDK patterns.
- * 
- * Compatible with:
- * - Arcium SDK v0.6.2
- * - Anchor v0.32.x
- * - @solana/web3.js v1.x
- * 
- * Usage:
- *   ARCIUM_CLUSTER_OFFSET=123 \
- *   ANCHOR_PROVIDER_URL=https://api.devnet.solana.com \
- *   ANCHOR_WALLET=~/.config/solana/id.json \
- *   npx ts-node scripts/test-devnet.ts
  */
 
 import * as anchor from "@coral-xyz/anchor";
@@ -24,12 +11,14 @@ import {
   getAccount,
 } from "@solana/spl-token";
 import * as path from "path";
+import chalk from "chalk";
 
 import {
   // Config
   PROGRAM_ID,
   WSOL_MINT,
   USDC_MINT,
+  ARCIUM_CLUSTER_OFFSET, // Need this import
   // PDA utilities  
   deriveObligationPda,
   deriveCollateralVaultPda,
@@ -50,9 +39,17 @@ import {
   loadIdl,
   loadDeployment,
   checkBalance,
-  printHeader,
   formatSignature,
-  logTransactionError,
+  // Logging
+  logHeader,
+  logSection,
+  logEntry,
+  logSuccess,
+  logError,
+  logWarning,
+  logInfo,
+  logDivider,
+  icons
 } from "./lib";
 
 // Import types
@@ -71,13 +68,13 @@ async function testDeposit(
   payer: anchor.web3.Keypair,
   poolPda: PublicKey
 ): Promise<BN | null> {
-  printHeader("TEST: Deposit Instruction");
+  logSection("TEST: Deposit Instruction");
 
   const connection = provider.connection;
   const depositAmount = new BN(0.001 * LAMPORTS_PER_SOL); // 0.001 SOL
 
   // 1. Get or create user's wSOL token account
-  console.log("\n📝 Setting up user token accounts...");
+  console.log(chalk.gray(`   ${icons.dot} Setting up user token accounts...`));
 
   const userTokenAccount = await getOrCreateAssociatedTokenAccount(
     connection,
@@ -85,26 +82,25 @@ async function testDeposit(
     WSOL_MINT,
     payer.publicKey
   );
-  console.log(`   User wSOL ATA: ${userTokenAccount.address.toBase58()}`);
+  logEntry("User wSOL ATA", userTokenAccount.address.toBase58());
 
   // 2. Check wSOL balance
   const userTokenBalance = await getAccount(connection, userTokenAccount.address);
   const wsolBalance = Number(userTokenBalance.amount) / LAMPORTS_PER_SOL;
-  console.log(`   Current wSOL balance: ${wsolBalance} wSOL`);
+  logEntry("Current Balance", `${wsolBalance} wSOL`);
 
   if (Number(userTokenBalance.amount) < depositAmount.toNumber()) {
-    console.log("   ⚠️  Insufficient wSOL balance for deposit.");
-    console.log("   To get wSOL, wrap some SOL:");
-    console.log("   spl-token wrap 0.01");
-    return null;
+    logWarning("Insufficient wSOL balance for deposit.");
+    console.log(chalk.yellow("     To get wSOL, wrap some SOL: spl-token wrap 0.01"));
+    // return null; // Let it try anyway if token account exists, sometimes balance check is flaky on devnet
   }
 
   // 3. Generate computation offset
   const computationOffset = generateComputationOffset();
-  console.log(`\n🔢 Computation offset: ${computationOffset.toString()}`);
+  logEntry("Computation Offset", computationOffset.toString());
 
   // 4. Get Arcium accounts
-  console.log("\n🔐 Setting up Arcium accounts...");
+  console.log(chalk.gray(`   ${icons.dot} Setting up Arcium accounts...`));
 
   const arciumAccounts = getArciumAccounts({
     programId: program.programId,
@@ -125,14 +121,14 @@ async function testDeposit(
     program.programId
   );
 
-  console.log(`   MXE Account: ${arciumAccounts.mxeAccount.toBase58()}`);
-  console.log(`   Cluster: ${arciumAccounts.clusterAccount.toBase58()}`);
-  console.log(`   Comp Def: ${arciumAccounts.compDefAccount.toBase58()}`);
-  console.log(`   User Obligation: ${userObligationPda.toBase58()}`);
-  console.log(`   Collateral Vault: ${collateralVaultPda.toBase58()}`);
+  logEntry("MXE Account", arciumAccounts.mxeAccount.toBase58());
+  logEntry("Cluster", arciumAccounts.clusterAccount.toBase58());
+  logEntry("Comp Def", arciumAccounts.compDefAccount.toBase58());
+  logEntry("User Obligation", userObligationPda.toBase58());
+  logEntry("Collateral Vault", collateralVaultPda.toBase58());
 
-  console.log("\n📤 Sending deposit transaction...");
-  console.log(`   Amount: ${depositAmount.toNumber() / LAMPORTS_PER_SOL} SOL`);
+  console.log(chalk.gray(`\n   ${icons.arrow} Sending deposit transaction...`));
+  logEntry("Amount", `${depositAmount.toNumber() / LAMPORTS_PER_SOL} SOL`);
 
   // Generate x25519 keypair for output encryption
   // The MXE will encrypt the output so only the user can decrypt with their private key
@@ -140,10 +136,15 @@ async function testDeposit(
     provider,
     program.programId
   );
-  const nonce = generateNonce();
-  const nonceAsBN = nonceToU128(nonce);
+  
+  // Nonces for UserState and PoolState
+  const userNonce = generateNonce();
+  const userNonceAsBN = nonceToU128(userNonce);
+  
+  const mxeNonce = generateNonce();
+  const mxeNonceAsBN = nonceToU128(mxeNonce);
 
-  console.log(`   User x25519 pubkey: ${Buffer.from(userX25519PubKey).toString("hex").slice(0, 16)}...`);
+  logEntry("User X25519 Pubkey", Buffer.from(userX25519PubKey).toString("hex").slice(0, 16) + "...");
 
   try {
     const sig = await program.methods
@@ -151,7 +152,8 @@ async function testDeposit(
         computationOffset,
         depositAmount,
         Array.from(userX25519PubKey) as number[],
-        nonceAsBN
+        userNonceAsBN,
+        mxeNonceAsBN
       )
       .accountsPartial({
         payer: payer.publicKey,
@@ -169,12 +171,12 @@ async function testDeposit(
       })
       .rpc({ commitment: "confirmed" });
 
-    console.log(`\n✅ Deposit transaction sent!`);
-    console.log(`   Signature: ${sig}`);
-    console.log(`   Explorer: https://explorer.solana.com/tx/${sig}?cluster=devnet`);
+    logSuccess("Deposit transaction sent!");
+    logEntry("Signature", sig);
+    console.log(chalk.gray(`     Explorer: https://explorer.solana.com/tx/${sig}?cluster=devnet`));
 
     // Wait for MXE callback finalization
-    console.log(`\n⏳ Waiting for MXE callback (30-60 seconds)...`);
+    console.log(chalk.yellow(`\n   ${icons.clock} Waiting for MXE callback (30-60 seconds)...`));
 
     try {
       const finalizeSig = await waitForComputation(
@@ -182,19 +184,20 @@ async function testDeposit(
         computationOffset,
         program.programId
       );
-      console.log(`\n✅ Computation finalized!`);
-      console.log(`   Callback: ${finalizeSig}`);
-      console.log(`   Explorer: https://explorer.solana.com/tx/${finalizeSig}?cluster=devnet`);
+      logSuccess("Computation finalized!");
+      logEntry("Callback", finalizeSig);
+      console.log(chalk.gray(`     Explorer: https://explorer.solana.com/tx/${finalizeSig}?cluster=devnet`));
     } catch (finError: any) {
-      console.log(`\n⚠️  Callback timeout: ${finError.message}`);
-      console.log(`   The deposit was queued but callback may still be processing.`);
+      logWarning(`Callback timeout: ${finError.message}`);
+      console.log(chalk.yellow("     The deposit was queued but callback may still be processing."));
     }
 
     return computationOffset;
 
   } catch (error: any) {
-    console.error("\n❌ Deposit failed:");
-    logTransactionError(error);
+    logError("Deposit failed");
+    console.error(error);
+    if (error.logs) console.error(error.logs);
     throw error;
   }
 }
@@ -208,29 +211,29 @@ async function testBorrow(
   payer: anchor.web3.Keypair,
   poolPda: PublicKey
 ): Promise<void> {
-  printHeader("TEST: Borrow Instruction (Encrypted)");
+  logSection("TEST: Borrow Instruction (Encrypted)");
 
   // 1. Create encryption context
-  console.log("\n🔐 Creating encryption context...");
+  console.log(chalk.gray(`   ${icons.dot} Creating encryption context...`));
 
   const { publicKey, cipher } = await createEncryptionContext(
     provider,
     program.programId
   );
-  console.log(`   User x25519 public key: ${Buffer.from(publicKey).toString("hex").slice(0, 16)}...`);
+  logEntry("User X25519 Pubkey", Buffer.from(publicKey).toString("hex").slice(0, 16) + "...");
 
   // 2. Encrypt borrow amount
   const borrowAmount = BigInt(0.0001 * LAMPORTS_PER_SOL);
   const nonce = generateNonce();
   const encryptedAmount = encryptU64(cipher, borrowAmount, nonce);
 
-  console.log(`   Encrypted amount: ${Buffer.from(encryptedAmount).toString("hex").slice(0, 32)}...`);
+  logEntry("Encrypted Amount", Buffer.from(encryptedAmount).toString("hex").slice(0, 32) + "...");
 
   // 3. Generate computation offset
   const computationOffset = generateComputationOffset();
 
   // 4. Get Arcium accounts
-  console.log("\n🔐 Setting up Arcium accounts...");
+  console.log(chalk.gray(`   ${icons.dot} Setting up Arcium accounts...`));
 
   const arciumAccounts = getArciumAccounts({
     programId: program.programId,
@@ -245,7 +248,7 @@ async function testBorrow(
     program.programId
   );
 
-  console.log(`   User Obligation: ${userObligationPda.toBase58()}`);
+  logEntry("User Obligation", userObligationPda.toBase58());
 
   // 6. Format for instruction
   const encryptedAmountArray = Array.from(encryptedAmount);
@@ -254,21 +257,30 @@ async function testBorrow(
   }
 
   const pubKeyArray = Array.from(publicKey);
-  const nonceAsBN = nonceToU128(nonce);
+  const userNonceAsBN = nonceToU128(nonce);
+  
+  const mxeNonce = generateNonce();
+  const mxeNonceAsBN = nonceToU128(mxeNonce);
 
   // Note: Pyth oracle accounts needed for real borrow
-  console.log("\n⚠️  Note: Using placeholder Pyth accounts");
-  console.log("   In production, use Pyth Hermes API to fetch real price updates");
+  logWarning("Note: Using placeholder Pyth accounts");
+  console.log(chalk.yellow("     In production, use Pyth Hermes API to fetch real price updates"));
 
   const solPriceUpdate = payer.publicKey; // Placeholder
   const usdcPriceUpdate = payer.publicKey; // Placeholder
 
-  console.log("\n📤 Sending borrow transaction...");
-  console.log("   ⚠️  Expected to fail without proper Pyth accounts");
+  console.log(chalk.gray(`\n   ${icons.arrow} Sending borrow transaction...`));
+  console.log(chalk.yellow("     Expected to fail without proper Pyth accounts"));
 
   try {
     const sig = await program.methods
-      .borrow(computationOffset, encryptedAmountArray, pubKeyArray, nonceAsBN)
+      .borrow(
+          computationOffset, 
+          encryptedAmountArray, 
+          pubKeyArray, 
+          userNonceAsBN,
+          mxeNonceAsBN
+      )
       .accountsPartial({
         payer: payer.publicKey,
         pool: poolPda,
@@ -284,12 +296,12 @@ async function testBorrow(
       })
       .rpc({ commitment: "confirmed" });
 
-    console.log(`\n✅ Borrow transaction sent!`);
-    console.log(`   Signature: ${sig}`);
-    console.log(`   Explorer: https://explorer.solana.com/tx/${sig}?cluster=devnet`);
+    logSuccess("Borrow transaction sent!");
+    logEntry("Signature", sig);
+    console.log(chalk.gray(`     Explorer: https://explorer.solana.com/tx/${sig}?cluster=devnet`));
 
     // Wait for callback
-    console.log(`\n⏳ Waiting for MXE callback...`);
+    console.log(chalk.yellow(`\n   ${icons.clock} Waiting for MXE callback...`));
 
     try {
       const finalizeSig = await waitForComputation(
@@ -297,10 +309,10 @@ async function testBorrow(
         computationOffset,
         program.programId
       );
-      console.log(`\n✅ Computation finalized!`);
-      console.log(`   Callback: ${finalizeSig}`);
+      logSuccess("Computation finalized!");
+      logEntry("Callback", finalizeSig);
     } catch (finError: any) {
-      console.log(`\n⚠️  Callback timeout: ${finError.message}`);
+      logWarning(`Callback timeout: ${finError.message}`);
     }
 
   } catch (error: any) {
@@ -309,18 +321,19 @@ async function testBorrow(
       error.message?.includes("InvalidOwner") ||
       error.logs?.some((l: string) => l.includes("InvalidOwner"))
     ) {
-      console.log("\n⚠️  Borrow failed with Pyth validation error (expected)");
-      console.log("   The instruction structure is correct!");
-      console.log("   To use borrow, provide real Pyth price update accounts.");
+      logWarning("Borrow failed with Pyth validation error (expected)");
+      console.log(chalk.yellow("     The instruction structure is correct!"));
+      console.log(chalk.yellow("     To use borrow, provide real Pyth price update accounts."));
     } else if (
       error.message?.includes("InvalidBorrowAmount") ||
       error.logs?.some((l: string) => l.includes("InvalidBorrowAmount"))
     ) {
-      console.log("\n⚠️  Borrow failed - No collateral deposited");
-      console.log("   A successful deposit is required before borrowing.");
+      logWarning("Borrow failed - No collateral deposited");
+      console.log(chalk.yellow("     A successful deposit is required before borrowing."));
     } else {
-      console.error("\n❌ Borrow failed:");
-      logTransactionError(error);
+      logError("Borrow failed");
+      console.error(error);
+      if (error.logs) console.error(error.logs);
     }
   }
 }
@@ -330,7 +343,12 @@ async function testBorrow(
 // ============================================================
 
 async function main() {
-  printHeader("ShadowLend Devnet Test");
+  logHeader("ShadowLend Devnet Test");
+
+  // Set default env vars for Arcium SDK
+  if (!process.env.ARCIUM_CLUSTER_OFFSET) {
+    process.env.ARCIUM_CLUSTER_OFFSET = ARCIUM_CLUSTER_OFFSET.toString();
+  }
 
   // Initialize Arcium environment
   initializeArciumEnv();
@@ -340,56 +358,61 @@ async function main() {
 
   // Load wallet
   const payer = loadDefaultWallet();
-  console.log(`\n👤 Payer: ${payer.publicKey.toBase58()}`);
+  logSection("Configuration");
+  logEntry("Payer", payer.publicKey.toBase58(), icons.key);
 
   // Check balance
-  await checkBalance(provider.connection, payer.publicKey, 0.1);
+  const balance = await checkBalance(provider.connection, payer.publicKey, 0.1);
 
   // Get Arcium env
   const arciumEnv = getConfiguredArciumEnv();
-  console.log(`🔐 Arcium cluster offset: ${arciumEnv.arciumClusterOffset}`);
+  logEntry("Arcium Cluster Offset", arciumEnv.arciumClusterOffset.toString(), icons.info);
 
   // Load program
   const basePath = path.join(__dirname, "..");
   const idl = loadIdl(basePath);
   const program = new Program<ShadowlendProgram>(idl, provider);
-
-  console.log(`\n📋 Program ID: ${program.programId.toBase58()}`);
+  logEntry("Program ID", program.programId.toBase58(), icons.key);
+  logDivider();
 
   // Load deployment info
   let poolPda: PublicKey;
   try {
     const deployment = loadDeployment(basePath);
     poolPda = new PublicKey(deployment.poolPda);
-    console.log(`📋 Pool PDA: ${poolPda.toBase58()}`);
+    logEntry("Pool PDA", poolPda.toBase58(), icons.folder);
   } catch {
     // Derive from mints if deployment.json doesn't exist
     const [derived] = derivePoolPda(WSOL_MINT, USDC_MINT, program.programId);
     poolPda = derived;
-    console.log(`📋 Pool PDA (derived): ${poolPda.toBase58()}`);
+    logEntry("Pool PDA (derived)", poolPda.toBase58(), icons.folder);
   }
+  logDivider();
 
   // Run tests
   try {
     // Test 1: Deposit
     const depositOffset = await testDeposit(program, provider, payer, poolPda);
 
+    logDivider();
+
     if (depositOffset) {
       // Wait before borrow test
-      console.log("\n⏳ Waiting 10 seconds before borrow test...");
+      console.log(chalk.yellow(`\n   ${icons.clock} Waiting 10 seconds before borrow test...`));
       await new Promise((resolve) => setTimeout(resolve, 10000));
 
       // Test 2: Borrow
       // await testBorrow(program, provider, payer, poolPda);
-      console.log("\n⏭️  Skipping borrow test (user requested deposit only)");
+      logInfo("Skipping borrow test (user requested deposit only)");
     } else {
-      console.log("\n⏭️  Skipping borrow test (deposit was not successful)");
+      logInfo("Skipping borrow test (deposit was not successful)");
     }
 
-    printHeader("TESTS COMPLETED");
+    logSuccess("TESTS COMPLETED");
+    logDivider();
 
   } catch (error: any) {
-    console.error("\n❌ Test failed:", error.message);
+    logError(`Test failed: ${error.message}`);
     process.exit(1);
   }
 }

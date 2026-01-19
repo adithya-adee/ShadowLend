@@ -1,17 +1,6 @@
 #!/usr/bin/env ts-node
 /**
  * ShadowLend Deployment Verification Script
- * 
- * Verifies all PDAs and accounts are correctly initialized.
- * 
- * Compatible with:
- * - Arcium SDK v0.6.2
- * - Anchor v0.32.x
- * 
- * Usage:
- *   ANCHOR_PROVIDER_URL=https://api.devnet.solana.com \
- *   ANCHOR_WALLET=~/.config/solana/id.json \
- *   npx ts-node scripts/verify-deployment.ts
  */
 
 import * as anchor from "@coral-xyz/anchor";
@@ -25,34 +14,38 @@ import {
   setupProvider,
   loadDeployment,
   loadIdl,
-  printHeader,
+  logHeader,
+  logSection,
+  logEntry,
+  logSuccess,
+  logError,
+  logWarning,
+  logDivider,
+  icons
 } from "./lib";
 
-// ============================================================
-// Main
-// ============================================================
-
 async function main() {
-  printHeader("ShadowLend Deployment Verification");
+  logHeader("Deployment Verification");
 
   // Load provider
   const provider = setupProvider();
   const connection = provider.connection;
 
   // Load deployment info
-  const basePath = path.join(__dirname, "..");
   let deployment: any;
+  const basePath = path.join(__dirname, "..");
   
   try {
     deployment = loadDeployment(basePath);
   } catch {
-    console.error("\n❌ deployment.json not found.");
-    console.error("   Run 'npm run deploy' first.");
+    logError("deployment.json not found. Run 'npm run deploy' first.");
     process.exit(1);
   }
 
-  console.log(`\n📅 Deployed: ${deployment.deployedAt}`);
-  console.log(`🌐 Network:  ${deployment.network}`);
+  logSection("Deployment Metadata");
+  logEntry("Deployed At", deployment.deployedAt, icons.clock);
+  logEntry("Network", deployment.network, icons.info);
+  logDivider();
 
   // Load IDL
   const idl = loadIdl(basePath);
@@ -61,35 +54,36 @@ async function main() {
   let allPassed = true;
   let warnings: string[] = [];
 
-  console.log("\n📋 Checking accounts...\n");
+  logSection("Account Verification");
 
   // Check 1: Program exists
   const programInfo = await connection.getAccountInfo(
     new PublicKey(deployment.programId)
   );
   if (programInfo) {
-    console.log(`✅ Program:          ${deployment.programId.slice(0, 20)}...`);
-    console.log(`   • Size:           ${programInfo.data.length} bytes`);
+    logSuccess(`Program Found`);
+    logEntry("Size", `${programInfo.data.length} bytes`);
   } else {
-    console.log(`❌ Program:          NOT FOUND`);
+    logError(`Program NOT FOUND`);
     allPassed = false;
   }
+  logDivider();
 
   // Check 2: Pool account
   try {
     const pool = await program.account.pool.fetch(
       new PublicKey(deployment.poolPda)
     );
-    console.log(`✅ Pool:             ${deployment.poolPda.slice(0, 20)}...`);
-    console.log(`   • Authority:      ${pool.authority.toBase58().slice(0, 20)}...`);
-    console.log(`   • LTV:            ${pool.ltv / 100}%`);
-    console.log(`   • Liq. Threshold: ${pool.liquidationThreshold / 100}%`);
-    console.log(`   • Liq. Bonus:     ${pool.liquidationBonus / 100}%`);
-    console.log(`   • Borrow Rate:    ${Number(pool.fixedBorrowRate) / 100}% APY`);
+    logSuccess(`Pool Initialized`);
+    logEntry("Address", deployment.poolPda.slice(0, 20) + "...");
+    logEntry("Authority", pool.authority.toBase58().slice(0, 20) + "...");
+    logEntry("LTV", `${pool.ltv / 100}%`);
+    logEntry("Borrow Rate", `${Number(pool.fixedBorrowRate) / 100}% APY`);
   } catch (e) {
-    console.log(`❌ Pool:             NOT FOUND or invalid`);
+    logError(`Pool NOT FOUND or invalid`);
     allPassed = false;
   }
+  logDivider();
 
   // Check 3: Collateral vault
   try {
@@ -97,12 +91,14 @@ async function main() {
       connection,
       new PublicKey(deployment.collateralVault)
     );
-    console.log(`✅ Collateral Vault: ${deployment.collateralVault.slice(0, 20)}...`);
-    console.log(`   • Balance:        ${Number(collateralVault.amount) / 1e9} wSOL`);
+    logSuccess(`Collateral Vault Found`);
+    logEntry("Address", deployment.collateralVault.slice(0, 20) + "...");
+    logEntry("Balance", `${Number(collateralVault.amount) / 1e9} wSOL`);
   } catch (e) {
-    console.log(`❌ Collateral Vault: NOT FOUND`);
+    logError(`Collateral Vault NOT FOUND`);
     allPassed = false;
   }
+  logDivider();
 
   // Check 4: Borrow vault
   try {
@@ -110,25 +106,27 @@ async function main() {
       connection,
       new PublicKey(deployment.borrowVault)
     );
-    console.log(`✅ Borrow Vault:     ${deployment.borrowVault.slice(0, 20)}...`);
-    console.log(`   • Balance:        ${Number(borrowVault.amount) / 1e6} USDC`);
+    logSuccess(`Borrow Vault Found`);
+    logEntry("Address", deployment.borrowVault.slice(0, 20) + "...");
+    logEntry("Balance", `${Number(borrowVault.amount) / 1e6} USDC`);
 
     if (Number(borrowVault.amount) === 0) {
       warnings.push("Borrow vault is empty - users cannot borrow");
     }
   } catch (e) {
-    console.log(`❌ Borrow Vault:     NOT FOUND`);
+    logError(`Borrow Vault NOT FOUND`);
     allPassed = false;
   }
+  logDivider();
 
   // Check 5: Mints
   const collateralMintInfo = await connection.getAccountInfo(
     new PublicKey(deployment.collateralMint)
   );
   if (collateralMintInfo) {
-    console.log(`✅ Collateral Mint:  ${deployment.collateralMint.slice(0, 20)}...`);
+    logSuccess(`Collateral Mint Found`);
   } else {
-    console.log(`❌ Collateral Mint:  NOT FOUND`);
+    logError(`Collateral Mint NOT FOUND`);
     allPassed = false;
   }
 
@@ -136,30 +134,30 @@ async function main() {
     new PublicKey(deployment.borrowMint)
   );
   if (borrowMintInfo) {
-    console.log(`✅ Borrow Mint:      ${deployment.borrowMint.slice(0, 20)}...`);
+    logSuccess(`Borrow Mint Found`);
   } else {
-    console.log(`❌ Borrow Mint:      NOT FOUND`);
+    logError(`Borrow Mint NOT FOUND`);
     allPassed = false;
   }
+  logDivider();
 
   // Warnings
   if (warnings.length > 0) {
-    console.log("\n⚠️  Warnings:");
+    logWarning("Verification Warnings:");
     warnings.forEach((w) => console.log(`   • ${w}`));
+    logDivider();
   }
 
-  // Summary
-  console.log("\n" + "═".repeat(60));
   if (allPassed) {
-    console.log("✅ All checks passed! Deployment is valid.");
+    logSuccess("✅ All checks passed! Deployment is valid.");
   } else {
-    console.log("❌ Some checks failed. See above for details.");
+    logError("❌ Some checks failed. See above for details.");
     process.exit(1);
   }
-  console.log("═".repeat(60));
+  logDivider();
 }
 
 main().catch((err) => {
-  console.error("\n❌ Verification failed:", err);
+  logError(`Verification failed: ${err.message}`);
   process.exit(1);
 });

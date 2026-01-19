@@ -17,7 +17,9 @@
     "@arcium-hq/client": "0.6.3",
     "@coral-xyz/anchor": "^0.32.1",
     "@solana/spl-token": "^0.4.6",
-    "@solana/web3.js": "^1.95.4"
+    "@solana/web3.js": "^1.95.4",
+    "chalk": "^4.1.2",
+    "dotenv": "^17.2.3"
   },
   "devDependencies": {
     "@types/bn.js": "^5.1.0",

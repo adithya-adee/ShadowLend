@@ -11,7 +11,7 @@ import { PublicKey } from "@solana/web3.js";
 // Program Configuration
 // ============================================================
 
-export const PROGRAM_ID = new PublicKey("J6hwZmTBYjDQdVdbeX7vuhpwpqgrhHUqQaUk8qYsZvXK");
+export const PROGRAM_ID = new PublicKey("EQTzqTGWEop1b6Cfw2SJPGJD69nHRu5Dp7Vg5sq6zZBm");
 
 // ============================================================
 // Token Mints (Devnet)

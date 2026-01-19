@@ -14,7 +14,79 @@ import {
 } from "@solana/web3.js";
 import * as fs from "fs";
 import * as path from "path";
+import chalk from "chalk";
+import "dotenv/config";
 import { PROGRAM_ID, NETWORKS } from "./config";
+
+// ============================================================
+// Logging Utilities
+// ============================================================
+
+export const icons = {
+  rocket: "🚀",
+  key: "🔑",
+  link: "🔗",
+  folder: "📁",
+  file: "📄",
+  checkmark: "✔",
+  cross: "✖",
+  arrow: "→",
+  dot: "•",
+  sparkle: "✨",
+  warning: "⚠",
+  info: "🌐",
+  clock: "⏱",
+};
+
+export function logHeader(title: string): void {
+  console.log();
+  console.log(
+    chalk.magentaBright(`  ${icons.sparkle} `) +
+      chalk.bold.white(title)
+  );
+  console.log(chalk.gray(`  ${"─".repeat(45)}`));
+  console.log();
+}
+
+export function logSection(title: string): void {
+  console.log(chalk.cyan.bold(`  ${icons.dot} ${title}`));
+  console.log(chalk.gray(`  ${"─".repeat(45)}`));
+}
+
+export function logEntry(label: string, value: string, icon?: string): void {
+  const iconStr = icon !== undefined ? `${icon} ` : "   ";
+  console.log(
+    chalk.gray(`  ${iconStr}`) +
+      chalk.white(`${label}: `) +
+      chalk.yellowBright(value)
+  );
+}
+
+export function logSuccess(message: string): void {
+  console.log();
+  console.log(
+    chalk.greenBright(`  ${icons.checkmark} `) + chalk.green.bold(message)
+  );
+}
+
+export function logError(message: string): void {
+  console.log();
+  console.error(chalk.redBright(`  ${icons.cross} `) + chalk.red.bold(message));
+}
+
+export function logWarning(message: string): void {
+  console.log(
+    chalk.yellowBright(`  ${icons.warning} `) + chalk.yellow(message)
+  );
+}
+
+export function logInfo(message: string): void {
+  console.log(chalk.blueBright(`  ${icons.info} `) + chalk.blue(message));
+}
+
+export function logDivider(): void {
+  console.log();
+}
 
 // ============================================================
 // File System
@@ -98,8 +170,17 @@ export function createProgram(
 
 /**
  * Sets up the Anchor provider from environment.
+ * Sets defaults for Devnet if not specified.
  */
 export function setupProvider(): anchor.AnchorProvider {
+  // Set default env vars if not present
+  if (!process.env.ANCHOR_PROVIDER_URL) {
+    process.env.ANCHOR_PROVIDER_URL = "https://api.devnet.solana.com";
+  }
+  if (!process.env.ANCHOR_WALLET) {
+    process.env.ANCHOR_WALLET = process.env.HOME + "/.config/solana/id.json";
+  }
+
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
   return provider;

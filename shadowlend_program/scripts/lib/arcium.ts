@@ -215,15 +215,10 @@ export function getCompDefPda(
   programId: PublicKey,
   compDefName: keyof typeof COMP_DEF_NAMES
 ): PublicKey {
-  const baseSeed = getArciumAccountBaseSeed("ComputationDefinitionAccount");
   const offset = getCompDefAccOffset(COMP_DEF_NAMES[compDefName]);
-  const arciumProgramId = getArciumProgramId();
+  const offsetNum = Buffer.from(offset).readUInt32LE();
 
-  // Use our program ID as seed - Arcium validates this
-  return PublicKey.findProgramAddressSync(
-    [baseSeed, programId.toBuffer(), offset],
-    arciumProgramId
-  )[0];
+  return getCompDefAccAddress(programId, offsetNum);
 }
 
 // ============================================================

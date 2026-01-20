@@ -26,13 +26,18 @@ startup_wait = 60000
 shutdown_wait = 2000
 upgradeable = false
 
+
 [[test.genesis]]
-address = "F3G6Q9tRicyznCqcZLydJ6RxkwDSBeHWM458J7V6aeyk"
-program = "/home/glitchy_moon/glitchy_moon/github_repo/ShadowLend/shadowlend_program/artifacts/arcium_program_0.5.4.so"
+address = "Arcj82pX7HxYKLR92qvgZUAd7vGS1k4hQvAFcPATFdEQ"
+program = "/home/glitchy_moon/glitchy_moon/github_repo/ShadowLend/shadowlend_program/artifacts/arcium_program_0.6.3.so"
 
 [[test.genesis]]
 address = "L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95"
 program = "artifacts/lighthouse.so"
+
+[[test.validator.account]]
+address = "CbVwbiWyEr78Z6DaGgvANJUSZqYMWj1QagBzBXAkQPDt"
+filename = "artifacts/cluster_acc_0.json"
 
 [test.validator]
 bind_address = "127.0.0.1"

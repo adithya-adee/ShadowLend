@@ -82,7 +82,10 @@ async function initializeCompDefs(
   // Initialize Arcium environment
   initializeArciumEnv();
 
-  for (const compDef of COMP_DEFS) {
+
+  const DEPOSIT_ONLY = COMP_DEFS.filter(d => d.name === "Deposit");
+
+  for (const compDef of DEPOSIT_ONLY) {
     try {
       console.log(chalk.gray(`   ${icons.dot} ${compDef.name}...`));
 
@@ -94,50 +97,75 @@ async function initializeCompDefs(
       const mempoolAccount = getMempoolAccAddress(ARCIUM_CLUSTER_OFFSET);
       const executingPool = getExecutingPoolAccAddress(ARCIUM_CLUSTER_OFFSET);
       const arciumProgramId = getArciumProgramId();
+      console.log(chalk.gray(`     Arcium Program ID: ${arciumProgramId.toBase58()}`));
+
+      let isInitialized = false;
 
       // Check if already initialized AND owned by Arcium
       const accountInfo = await provider.connection.getAccountInfo(compDefPda);
       if (accountInfo) {
+        console.log(chalk.gray(`     Current Owner: ${accountInfo.owner.toBase58()}`));
         if (accountInfo.owner.equals(arciumProgramId)) {
-           console.log(chalk.yellow(`     ${icons.warning} Already initialized`));
-           continue;       
+           console.log(chalk.yellow(`     ${icons.warning} Already initialized (Account exists)`));
+           isInitialized = true;
         } else {
            console.log(chalk.yellow(`     ${icons.warning} Account exists but not owned by Arcium. Re-initializing...`));
         }
       }
 
-      // Initialize computation definition
-      const tx = await (program.methods as any)[compDef.method]()
-        .accounts({
-          payer: payer.publicKey,
-          systemProgram: SystemProgram.programId,
-          compDefAccount: compDefPda,
-          mxeAccount: mxeAccount,
-          // Arcium required accounts for context
-          clusterAccount,
-          mempoolAccount,
-          executingPool,
-        })
-        .preInstructions([anchor.web3.ComputeBudgetProgram.setComputeUnitLimit({ units: 1_400_000 })])
-        .rpc();
+      // Initialize computation definition if needed
+      if (!isInitialized) {
+        const tx = await (program.methods as any)[compDef.method]()
+          .accounts({
+            payer: payer.publicKey,
+            systemProgram: SystemProgram.programId,
+            compDefAccount: compDefPda,
+            mxeAccount: mxeAccount,
+            // Arcium required accounts for context
+            clusterAccount,
+            mempoolAccount,
+            executingPool,
+          })
+          .preInstructions([anchor.web3.ComputeBudgetProgram.setComputeUnitLimit({ units: 1_400_000 })])
+          .rpc();
 
-      console.log(chalk.green(`     ${icons.checkmark} Initialized (tx: ${formatSignature(tx)})`));
+        console.log(chalk.green(`     ${icons.checkmark} Initialized (tx: ${formatSignature(tx)})`));
+      }
 
-      // Finalize the definition
+      // Finalize the definition (always try to finalize to ensure it's completed)
       console.log(chalk.gray(`     Finalizing...`));
-      const finalizeTx = await buildFinalizeCompDefTransaction(
-        provider,
-        compDef.arciumKey,
-        program.programId
-      );
+      try {
+        const finalizeTx = await buildFinalizeCompDefTransaction(
+          provider,
+          compDef.arciumKey,
+          program.programId
+        );
+        
+        // Debug: Log keys
+        if (finalizeTx.instructions.length > 0) {
+            console.log("     Finalize TX Keys:");
+            finalizeTx.instructions[0].keys.forEach(k => {
+                if (k.pubkey.toBase58() === compDefPda.toBase58()) {
+                    console.log(chalk.green(`       - ${k.pubkey.toBase58()} (MATCHES PDA)`));
+                } else {
+                    console.log(`       - ${k.pubkey.toBase58()}`);
+                }
+            });
+        }
 
-      const latestBlockhash = await provider.connection.getLatestBlockhash();
-      finalizeTx.recentBlockhash = latestBlockhash.blockhash;
-      finalizeTx.lastValidBlockHeight = latestBlockhash.lastValidBlockHeight;
-      finalizeTx.sign(payer.payer);
+        const latestBlockhash = await provider.connection.getLatestBlockhash();
+        finalizeTx.recentBlockhash = latestBlockhash.blockhash;
+        finalizeTx.lastValidBlockHeight = latestBlockhash.lastValidBlockHeight;
+        finalizeTx.sign(payer.payer);
 
-      const finSig = await provider.sendAndConfirm(finalizeTx, [payer.payer]);
-      console.log(chalk.greenBright(`     ${icons.checkmark} Finalized (tx: ${formatSignature(finSig)})`));
+        const finSig = await provider.sendAndConfirm(finalizeTx, [payer.payer]);
+        console.log(chalk.greenBright(`     ${icons.checkmark} Finalized (tx: ${formatSignature(finSig)})`));
+      } catch (finalizeError: any) {
+        // If it's already finalized or other non-critical error, we might want to warn but continue
+        // Arcium doesn't have a specific "AlreadyFinalized" error code easily accessible here usually, 
+        // but we can check the error message or just log it as a warning.
+        console.log(chalk.yellow(`     ${icons.info} Finalization skipped or failed: ${finalizeError.message}`));
+      }
 
     } catch (error: any) {
       if (isAlreadyInitializedError(error)) {

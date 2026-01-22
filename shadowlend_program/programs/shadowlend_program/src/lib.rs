@@ -1,180 +1,254 @@
 use anchor_lang::prelude::*;
+use anchor_spl::token::{self, Transfer};
 use arcium_anchor::prelude::*;
 
-const COMP_DEF_OFFSET_ADD_TOGETHER: u32 = comp_def_offset("add_together");
+pub mod error;
+pub mod instructions;
+pub mod state;
 
-declare_id!("BzVVANvwPQgyQ7F4zxkaJ9gjrwKQUEoponS7sMbHLCHU");
+pub use state::*;
+pub use instructions::*;
+
+// Computation definition offsets for Arcium circuits
+pub const COMP_DEF_OFFSET_DEPOSIT: u32 = comp_def_offset("deposit");
+pub const COMP_DEF_OFFSET_WITHDRAW: u32 = comp_def_offset("withdraw");
+pub const COMP_DEF_OFFSET_BORROW: u32 = comp_def_offset("borrow");
+pub const COMP_DEF_OFFSET_REPAY: u32 = comp_def_offset("repay");
+
+declare_id!("BzVVANvwPQgyQ7F4zxkaJ9gjrwKQEoponS7sMbHLCHU");
 
 #[arcium_program]
 pub mod shadowlend_program {
     use super::*;
+    use crate::error::ErrorCode;
+    use crate::instructions::{
+        InitializePool, 
+        Deposit, DepositCallback,  
+        Borrow, BorrowCallback,  
+        Withdraw, WithdrawCallback, 
+        Repay, RepayCallback,
+    };
 
-    pub fn init_add_together_comp_def(ctx: Context<InitAddTogetherCompDef>) -> Result<()> {
-        init_comp_def(ctx.accounts, None, None)?;
-        Ok(())
+    /// Initialize lending pool
+    pub fn initialize_pool(
+        ctx: Context<InitializePool>,
+        ltv_bps: u16,
+        liquidation_threshold: u16,
+    ) -> Result<()> {
+        crate::instructions::initialize_pool_handler(ctx, ltv_bps, liquidation_threshold)
     }
 
-    pub fn add_together(
-        ctx: Context<AddTogether>,
+    /// Deposit collateral (queues Arcium MPC computation)
+    pub fn deposit(
+        ctx: Context<Deposit>,
         computation_offset: u64,
-        ciphertext_0: [u8; 32],
-        ciphertext_1: [u8; 32],
-        pubkey: [u8; 32],
-        nonce: u128,
+        amount: u64,
+        user_pubkey: [u8; 32],
+        user_nonce: u128,
     ) -> Result<()> {
-        ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
-        let args = ArgBuilder::new()
-            .x25519_pubkey(pubkey)
-            .plaintext_u128(nonce)
-            .encrypted_u8(ciphertext_0)
-            .encrypted_u8(ciphertext_1)
-            .build();
+        crate::instructions::deposit_handler(ctx, computation_offset, amount, user_pubkey, user_nonce)
+    }
 
-        queue_computation(
-            ctx.accounts,
-            computation_offset,
-            args,
-            None,
-            vec![AddTogetherCallback::callback_ix(
-                computation_offset,
-                &ctx.accounts.mxe_account,
-                &[]
-            )?],
-            1,
-            0,
-        )?;
+    /// Deposit callback (called by Arcium after MPC computation)
+    #[arcium_callback(encrypted_ix = "deposit")]
+    pub fn deposit_callback(
+        ctx: Context<DepositCallback>,
+        output: SignedComputationOutputs<DepositOutput>,
+    ) -> Result<()> {
+        // Verify and extract output
+        let result = match output.verify_output(
+            &ctx.accounts.cluster_account,
+            &ctx.accounts.computation_account,
+        ) {
+            Ok(DepositOutput { field_0 }) => field_0,
+            Err(e) => {
+                msg!("Deposit computation verification failed: {}", e);
+                return Err(ErrorCode::AbortedComputation.into());
+            }
+        };
+        
+        // Update encrypted deposit with verified result
+        let user_obligation = &mut ctx.accounts.user_obligation;
+        user_obligation.encrypted_deposit = result.ciphertexts[0];
+        user_obligation.state_nonce += 1;
+        
+        msg!("Deposit callback completed, encrypted balance updated");
+        
         Ok(())
     }
 
-    #[arcium_callback(encrypted_ix = "add_together")]
-    pub fn add_together_callback(
-        ctx: Context<AddTogetherCallback>,
-        output: SignedComputationOutputs<AddTogetherOutput>,
+    /// Borrow assets (checking health in MPC)
+    pub fn borrow(
+        ctx: Context<Borrow>,
+        computation_offset: u64,
+        amount: u64,
+        user_pubkey: [u8; 32],
+        pool_ltv: u64,
     ) -> Result<()> {
-        let o = match output.verify_output(&ctx.accounts.cluster_account, &ctx.accounts.computation_account) {
-            Ok(AddTogetherOutput { field_0 }) => field_0,
-            Err(_) => return Err(ErrorCode::AbortedComputation.into()),
+        crate::instructions::borrow_handler(ctx, computation_offset, amount, user_pubkey, pool_ltv)
+    }
+
+    /// Borrow callback
+    #[arcium_callback(encrypted_ix = "borrow")]
+    pub fn borrow_callback(
+        ctx: Context<BorrowCallback>,
+        output: SignedComputationOutputs<BorrowOutput>,
+    ) -> Result<()> {
+        let result = match output.verify_output(
+            &ctx.accounts.cluster_account,
+            &ctx.accounts.computation_account,
+        ) {
+            Ok(o) => o,
+            Err(e) => {
+                msg!("Borrow computation verification failed: {}", e);
+                return Err(ErrorCode::AbortedComputation.into());
+            }
         };
 
-        emit!(SumEvent {
-            sum: o.ciphertexts[0],
-            nonce: o.nonce.to_le_bytes(),
-        });
+        let inner = result.field_0;
+        let approved = inner.field_1;
+        let amount = inner.field_2;
+        msg!("Borrow approved status: {}", approved);
+
+        if approved == 1 {
+            // Update debt
+            let user_obligation = &mut ctx.accounts.user_obligation;
+            user_obligation.encrypted_borrow = inner.field_0.ciphertexts[0];
+            user_obligation.state_nonce += 1;
+
+            // Transfer tokens
+            let pool_key = ctx.accounts.pool.key();
+            let seeds: &[&[u8]] = &[
+                b"borrow_vault",
+                pool_key.as_ref(),
+                &[ctx.bumps.borrow_vault],
+            ];
+            let signer = &[&seeds[..]];
+
+            let transfer_cpi = Transfer {
+                from: ctx.accounts.borrow_vault.to_account_info(),
+                to: ctx.accounts.user_token_account.to_account_info(),
+                authority: ctx.accounts.borrow_vault.to_account_info(), 
+            };
+
+            token::transfer(
+                CpiContext::new_with_signer(
+                    ctx.accounts.token_program.to_account_info(),
+                    transfer_cpi,
+                    signer,
+                ),
+                amount,
+            )?;
+            
+            msg!("Transferred {} tokens to user", amount);
+        } else {
+            msg!("Borrow request rejected by MPC health check");
+        }
+
         Ok(())
     }
-}
 
-#[queue_computation_accounts("add_together", payer)]
-#[derive(Accounts)]
-#[instruction(computation_offset: u64)]
-pub struct AddTogether<'info> {
-    #[account(mut)]
-    pub payer: Signer<'info>,
-    #[account(
-        init_if_needed,
-        space = 9,
-        payer = payer,
-        seeds = [&SIGN_PDA_SEED],
-        bump,
-        address = derive_sign_pda!(),
-    )]
-    pub sign_pda_account: Account<'info, ArciumSignerAccount>,
-    #[account(
-        address = derive_mxe_pda!()
-    )]
-    pub mxe_account: Account<'info, MXEAccount>,
-    #[account(
-        mut,
-        address = derive_mempool_pda!(mxe_account, ErrorCode::ClusterNotSet)
-    )]
-    /// CHECK: mempool_account, checked by the arcium program.
-    pub mempool_account: UncheckedAccount<'info>,
-    #[account(
-        mut,
-        address = derive_execpool_pda!(mxe_account, ErrorCode::ClusterNotSet)
-    )]
-    /// CHECK: executing_pool, checked by the arcium program.
-    pub executing_pool: UncheckedAccount<'info>,
-    #[account(
-        mut,
-        address = derive_comp_pda!(computation_offset, mxe_account, ErrorCode::ClusterNotSet)
-    )]
-    /// CHECK: computation_account, checked by the arcium program.
-    pub computation_account: UncheckedAccount<'info>,
-    #[account(
-        address = derive_comp_def_pda!(COMP_DEF_OFFSET_ADD_TOGETHER)
-    )]
-    pub comp_def_account: Account<'info, ComputationDefinitionAccount>,
-    #[account(
-        mut,
-        address = derive_cluster_pda!(mxe_account, ErrorCode::ClusterNotSet)
-    )]
-    pub cluster_account: Account<'info, Cluster>,
-    #[account(
-        mut,
-        address = ARCIUM_FEE_POOL_ACCOUNT_ADDRESS,
-    )]
-    pub pool_account: Account<'info, FeePool>,
-    #[account(
-        mut,
-        address = ARCIUM_CLOCK_ACCOUNT_ADDRESS
-    )]
-    pub clock_account: Account<'info, ClockAccount>,
-    pub system_program: Program<'info, System>,
-    pub arcium_program: Program<'info, Arcium>,
-}
+    /// Withdraw collateral (checking health in MPC)
+    pub fn withdraw(
+        ctx: Context<Withdraw>,
+        computation_offset: u64,
+        amount: u64,
+    ) -> Result<()> {
+        crate::instructions::withdraw_handler(ctx, computation_offset, amount)
+    }
 
-#[callback_accounts("add_together")]
-#[derive(Accounts)]
-pub struct AddTogetherCallback<'info> {
-    pub arcium_program: Program<'info, Arcium>,
-    #[account(
-        address = derive_comp_def_pda!(COMP_DEF_OFFSET_ADD_TOGETHER)
-    )]
-    pub comp_def_account: Account<'info, ComputationDefinitionAccount>,
-    #[account(
-        address = derive_mxe_pda!()
-    )]
-    pub mxe_account: Account<'info, MXEAccount>,
-    /// CHECK: computation_account, checked by arcium program via constraints in the callback context.
-    pub computation_account: UncheckedAccount<'info>,
-    #[account(
-        address = derive_cluster_pda!(mxe_account, ErrorCode::ClusterNotSet)
-    )]
-    pub cluster_account: Account<'info, Cluster>,
-    #[account(address = ::anchor_lang::solana_program::sysvar::instructions::ID)]
-    /// CHECK: instructions_sysvar, checked by the account constraint
-    pub instructions_sysvar: AccountInfo<'info>,
-}
+    /// Withdraw callback
+    #[arcium_callback(encrypted_ix = "withdraw")]
+    pub fn withdraw_callback(
+        ctx: Context<WithdrawCallback>,
+        output: SignedComputationOutputs<WithdrawOutput>,
+    ) -> Result<()> {
+        let result = match output.verify_output(
+            &ctx.accounts.cluster_account,
+            &ctx.accounts.computation_account,
+        ) {
+            Ok(o) => o,
+            Err(e) => {
+                msg!("Withdraw computation verification failed: {}", e);
+                return Err(ErrorCode::AbortedComputation.into());
+            }
+        };
 
-#[init_computation_definition_accounts("add_together", payer)]
-#[derive(Accounts)]
-pub struct InitAddTogetherCompDef<'info> {
-    #[account(mut)]
-    pub payer: Signer<'info>,
-    #[account(
-        mut,
-        address = derive_mxe_pda!()
-    )]
-    pub mxe_account: Box<Account<'info, MXEAccount>>,
-    #[account(mut)]
-    /// CHECK: comp_def_account, checked by arcium program.
-    /// Can't check it here as it's not initialized yet.
-    pub comp_def_account: UncheckedAccount<'info>,
-    pub arcium_program: Program<'info, Arcium>,
-    pub system_program: Program<'info, System>,
-}
+        let inner = result.field_0;
+        let approved = inner.field_1;
+        let amount = inner.field_2;
+        msg!("Withdraw approved status: {}", approved);
 
-#[event]
-pub struct SumEvent {
-    pub sum: [u8; 32],
-    pub nonce: [u8; 16],
-}
+        if approved == 1 {
+            // Update collateral
+            let user_obligation = &mut ctx.accounts.user_obligation;
+            user_obligation.encrypted_deposit = inner.field_0.ciphertexts[0];
+            user_obligation.state_nonce += 1;
 
-#[error_code]
-pub enum ErrorCode {
-    #[msg("The computation was aborted")]
-    AbortedComputation,
-    #[msg("Cluster not set")]
-    ClusterNotSet,
+            // Transfer tokens from collateral vault to user
+            let pool_key = ctx.accounts.pool.key();
+            let seeds: &[&[u8]] = &[
+                b"collateral_vault",
+                pool_key.as_ref(),
+                &[ctx.bumps.collateral_vault],
+            ];
+            let signer = &[&seeds[..]];
+
+            let transfer_cpi = Transfer {
+                from: ctx.accounts.collateral_vault.to_account_info(),
+                to: ctx.accounts.user_token_account.to_account_info(),
+                authority: ctx.accounts.collateral_vault.to_account_info(),
+            };
+
+            token::transfer(
+                CpiContext::new_with_signer(
+                    ctx.accounts.token_program.to_account_info(),
+                    transfer_cpi,
+                    signer,
+                ),
+                amount,
+            )?;
+            
+            msg!("Transferred {} tokens to user", amount);
+        } else {
+            msg!("Withdraw request rejected by MPC health check");
+        }
+
+        Ok(())
+    }
+
+    /// Repay debt
+    pub fn repay(
+        ctx: Context<Repay>,
+        computation_offset: u64,
+        amount: u64,
+    ) -> Result<()> {
+        crate::instructions::repay_handler(ctx, computation_offset, amount)
+    }
+
+    /// Repay callback
+    #[arcium_callback(encrypted_ix = "repay")]
+    pub fn repay_callback(
+        ctx: Context<RepayCallback>,
+        output: SignedComputationOutputs<RepayOutput>,
+    ) -> Result<()> {
+        let result = match output.verify_output(
+            &ctx.accounts.cluster_account,
+            &ctx.accounts.computation_account,
+        ) {
+            Ok(RepayOutput { field_0 }) => field_0,
+            Err(e) => {
+                msg!("Repay computation verification failed: {}", e);
+                return Err(ErrorCode::AbortedComputation.into());
+            }
+        };
+        
+        let user_obligation = &mut ctx.accounts.user_obligation;
+        user_obligation.encrypted_borrow = result.ciphertexts[0];
+        user_obligation.state_nonce += 1;
+        
+        msg!("Repay callback completed, encrypted debt updated");
+        
+        Ok(())
+    }
 }

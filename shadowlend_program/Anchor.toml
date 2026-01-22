@@ -5,42 +5,15 @@ package_manager = "yarn"
 resolution = true
 skip-lint = false
 
-[programs.devnet]
-shadowlend_program = "EeTbMXq1M2RffanXbU6EdTzBtdafMxc47YZ2faK1ioxy"
-
 [programs.localnet]
-shadowlend_program = "EeTbMXq1M2RffanXbU6EdTzBtdafMxc47YZ2faK1ioxy"
+shadowlend_program = "BzVVANvwPQgyQ7F4zxkaJ9gjrwKQUEoponS7sMbHLCHU"
 
 [registry]
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "https://api.devnet.solana.com"
+cluster = "localnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]
 test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 \"tests/**/*.ts\""
-
-[test]
-startup_wait = 60000
-shutdown_wait = 2000
-upgradeable = false
-
-
-[[test.genesis]]
-address = "Arcj82pX7HxYKLR92qvgZUAd7vGS1k4hQvAFcPATFdEQ"
-program = "/home/glitchy_moon/glitchy_moon/github_repo/ShadowLend/shadowlend_program/artifacts/arcium_program_0.6.3.so"
-
-[[test.genesis]]
-address = "L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95"
-program = "artifacts/lighthouse.so"
-
-[[test.validator.account]]
-address = "CbVwbiWyEr78Z6DaGgvANJUSZqYMWj1QagBzBXAkQPDt"
-filename = "artifacts/cluster_acc_0.json"
-
-[test.validator]
-bind_address = "127.0.0.1"
-url = "http://127.0.0.1:8899"
-ledger = ".anchor/test-ledger"
-rpc_port = 8899

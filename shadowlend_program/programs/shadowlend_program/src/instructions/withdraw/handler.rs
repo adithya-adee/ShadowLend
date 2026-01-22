@@ -1,9 +1,9 @@
+use super::accounts::Withdraw;
+use super::callback::WithdrawCallback;
+use crate::error::ErrorCode;
 use anchor_lang::prelude::*;
 use arcium_anchor::prelude::*;
 use arcium_client::idl::arcium::types::CallbackAccount;
-use crate::error::ErrorCode;
-use super::accounts::Withdraw;
-use super::callback::WithdrawCallback;
 
 pub fn withdraw_handler(
     ctx: Context<Withdraw>,
@@ -17,8 +17,7 @@ pub fn withdraw_handler(
     let ltv_bps = pool.ltv_bps as u64;
 
     // Circuit: withdraw(amount, current_encrypted, current_borrow, ltv_bps)
-    let mut args = ArgBuilder::new()
-        .plaintext_u64(amount);
+    let mut args = ArgBuilder::new().plaintext_u64(amount);
 
     // current_encrypted (collateral)
     args = if user_obligation.encrypted_deposit != [0u8; 32] {
@@ -30,11 +29,11 @@ pub fn withdraw_handler(
 
     // current_borrow
     args = if user_obligation.encrypted_borrow != [0u8; 32] {
-         if user_obligation.encrypted_deposit != [0u8; 32] {
+        if user_obligation.encrypted_deposit != [0u8; 32] {
             args.account(user_obligation.key(), 104u32, 32u32)
-         } else {
+        } else {
             args.account(user_obligation.key(), 104u32, 32u32)
-         }
+        }
     } else {
         args.encrypted_u128([0u8; 32])
     };
@@ -49,7 +48,7 @@ pub fn withdraw_handler(
         vec![WithdrawCallback::callback_ix(
             computation_offset,
             &ctx.accounts.mxe_account,
-             // amount removed
+            // amount removed
             &[
                 CallbackAccount {
                     pubkey: user_obligation.key(),

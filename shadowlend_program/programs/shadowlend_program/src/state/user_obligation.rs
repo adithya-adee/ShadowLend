@@ -5,21 +5,21 @@ use anchor_lang::prelude::*;
 pub struct UserObligation {
     /// Owner of this position
     pub user: Pubkey,
-    
+
     /// Associated lending pool
     pub pool: Pubkey,
-    
+
     /// Encrypted collateral amount - Enc<Shared, u128>
     /// This is a 32-byte ciphertext from Arcium MPC
     pub encrypted_deposit: [u8; 32],
-    
+
     /// Encrypted debt amount - Enc<Shared, u128>
     /// This is a 32-byte ciphertext from Arcium MPC
     pub encrypted_borrow: [u8; 32],
-    
+
     /// Replay protection nonce (incremented each state update)
     pub state_nonce: u128,
-    
+
     /// PDA bump seed
     pub bump: u8,
 }

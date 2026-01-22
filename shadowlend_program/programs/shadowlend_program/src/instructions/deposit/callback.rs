@@ -1,12 +1,10 @@
-use anchor_lang::prelude::*;
-use anchor_lang::prelude::UncheckedAccount;
-use arcium_anchor::prelude::*;
 use crate::error::ErrorCode;
 use crate::state::UserObligation;
+use anchor_lang::prelude::UncheckedAccount;
+use anchor_lang::prelude::*;
+use arcium_anchor::prelude::*;
 
 use crate::{COMP_DEF_OFFSET_DEPOSIT, ID, ID_CONST};
-
-
 
 /// Callback accounts for deposit computation result
 #[callback_accounts("deposit")]
@@ -28,11 +26,11 @@ pub struct DepositCallback<'info> {
         address = derive_cluster_pda!(mxe_account, ErrorCode::ClusterNotSet)
     )]
     pub cluster_account: Account<'info, Cluster>,
-    
+
     /// CHECK: instructions_sysvar, checked by the account constraint
     #[account(address = ::anchor_lang::solana_program::sysvar::instructions::ID)]
     pub instructions_sysvar: AccountInfo<'info>,
-    
+
     // Custom accounts for this callback:
     #[account(
         mut,

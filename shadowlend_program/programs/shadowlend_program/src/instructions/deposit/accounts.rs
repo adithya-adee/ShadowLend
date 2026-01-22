@@ -1,7 +1,7 @@
+use crate::state::{Pool, UserObligation};
 use anchor_lang::prelude::*;
 use anchor_spl::token::{Token, TokenAccount};
 use arcium_anchor::prelude::*;
-use crate::state::{Pool, UserObligation};
 
 use crate::error::ErrorCode;
 use crate::{ArciumSignerAccount, COMP_DEF_OFFSET_DEPOSIT, ID, ID_CONST};
@@ -64,13 +64,13 @@ pub struct Deposit<'info> {
         address = ARCIUM_CLOCK_ACCOUNT_ADDRESS
     )]
     pub clock_account: Account<'info, ClockAccount>,
-    
+
     #[account(
         seeds = [Pool::SEED_PREFIX],
         bump = pool.bump
     )]
     pub pool: Account<'info, Pool>,
-    
+
     #[account(
         init_if_needed,
         payer = payer,
@@ -79,11 +79,11 @@ pub struct Deposit<'info> {
         bump
     )]
     pub user_obligation: Account<'info, UserObligation>,
-    
+
     /// User's token account (source of deposit)
     #[account(mut)]
     pub user_token_account: Account<'info, TokenAccount>,
-    
+
     /// Pool's collateral vault
     #[account(
         mut,
@@ -91,7 +91,7 @@ pub struct Deposit<'info> {
         bump
     )]
     pub collateral_vault: Account<'info, TokenAccount>,
-    
+
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
     pub arcium_program: Program<'info, Arcium>,

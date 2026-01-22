@@ -6,8 +6,8 @@ pub mod error;
 pub mod instructions;
 pub mod state;
 
-pub use state::*;
 pub use instructions::*;
+pub use state::*;
 
 // Computation definition offsets for Arcium circuits
 pub const COMP_DEF_OFFSET_DEPOSIT: u32 = comp_def_offset("deposit");
@@ -22,11 +22,8 @@ pub mod shadowlend_program {
     use super::*;
     use crate::error::ErrorCode;
     use crate::instructions::{
-        InitializePool, 
-        Deposit, DepositCallback,  
-        Borrow, BorrowCallback,  
-        Withdraw, WithdrawCallback, 
-        Repay, RepayCallback,
+        Borrow, BorrowCallback, Deposit, DepositCallback, InitializePool, Repay, RepayCallback,
+        Withdraw, WithdrawCallback,
     };
 
     /// Initialize lending pool
@@ -46,7 +43,13 @@ pub mod shadowlend_program {
         user_pubkey: [u8; 32],
         user_nonce: u128,
     ) -> Result<()> {
-        crate::instructions::deposit_handler(ctx, computation_offset, amount, user_pubkey, user_nonce)
+        crate::instructions::deposit_handler(
+            ctx,
+            computation_offset,
+            amount,
+            user_pubkey,
+            user_nonce,
+        )
     }
 
     /// Deposit callback (called by Arcium after MPC computation)
@@ -66,14 +69,14 @@ pub mod shadowlend_program {
                 return Err(ErrorCode::AbortedComputation.into());
             }
         };
-        
+
         // Update encrypted deposit with verified result
         let user_obligation = &mut ctx.accounts.user_obligation;
         user_obligation.encrypted_deposit = result.ciphertexts[0];
         user_obligation.state_nonce += 1;
-        
+
         msg!("Deposit callback completed, encrypted balance updated");
-        
+
         Ok(())
     }
 
@@ -128,7 +131,7 @@ pub mod shadowlend_program {
             let transfer_cpi = Transfer {
                 from: ctx.accounts.borrow_vault.to_account_info(),
                 to: ctx.accounts.user_token_account.to_account_info(),
-                authority: ctx.accounts.borrow_vault.to_account_info(), 
+                authority: ctx.accounts.borrow_vault.to_account_info(),
             };
 
             token::transfer(
@@ -139,7 +142,7 @@ pub mod shadowlend_program {
                 ),
                 amount,
             )?;
-            
+
             msg!("Transferred {} tokens to user", amount);
         } else {
             msg!("Borrow request rejected by MPC health check");
@@ -149,11 +152,7 @@ pub mod shadowlend_program {
     }
 
     /// Withdraw collateral (checking health in MPC)
-    pub fn withdraw(
-        ctx: Context<Withdraw>,
-        computation_offset: u64,
-        amount: u64,
-    ) -> Result<()> {
+    pub fn withdraw(ctx: Context<Withdraw>, computation_offset: u64, amount: u64) -> Result<()> {
         crate::instructions::withdraw_handler(ctx, computation_offset, amount)
     }
 
@@ -208,7 +207,7 @@ pub mod shadowlend_program {
                 ),
                 amount,
             )?;
-            
+
             msg!("Transferred {} tokens to user", amount);
         } else {
             msg!("Withdraw request rejected by MPC health check");
@@ -218,11 +217,7 @@ pub mod shadowlend_program {
     }
 
     /// Repay debt
-    pub fn repay(
-        ctx: Context<Repay>,
-        computation_offset: u64,
-        amount: u64,
-    ) -> Result<()> {
+    pub fn repay(ctx: Context<Repay>, computation_offset: u64, amount: u64) -> Result<()> {
         crate::instructions::repay_handler(ctx, computation_offset, amount)
     }
 
@@ -242,13 +237,13 @@ pub mod shadowlend_program {
                 return Err(ErrorCode::AbortedComputation.into());
             }
         };
-        
+
         let user_obligation = &mut ctx.accounts.user_obligation;
         user_obligation.encrypted_borrow = result.ciphertexts[0];
         user_obligation.state_nonce += 1;
-        
+
         msg!("Repay callback completed, encrypted debt updated");
-        
+
         Ok(())
     }
 }

@@ -5,19 +5,19 @@ use anchor_lang::prelude::*;
 pub struct Pool {
     /// Pool administrator
     pub authority: Pubkey,
-    
+
     /// Collateral token mint
     pub collateral_mint: Pubkey,
-    
+
     /// Borrow token mint  
     pub borrow_mint: Pubkey,
-    
+
     /// Loan-to-value ratio in basis points (8000 = 80%)
     pub ltv_bps: u16,
-    
+
     /// Liquidation threshold in basis points (8500 = 85%)
     pub liquidation_threshold: u16,
-    
+
     /// PDA bump seed
     pub bump: u8,
 }

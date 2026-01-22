@@ -1,11 +1,11 @@
 pub mod admin;
-pub mod deposit;
 pub mod borrow;
-pub mod withdraw;
+pub mod deposit;
 pub mod repay;
+pub mod withdraw;
 
 pub use admin::*;
-pub use deposit::*;
 pub use borrow::*;
-pub use withdraw::*;
+pub use deposit::*;
 pub use repay::*;
+pub use withdraw::*;

@@ -1,12 +1,10 @@
-use anchor_lang::prelude::*;
-use anchor_lang::prelude::UncheckedAccount;
-use arcium_anchor::prelude::*;
 use crate::error::ErrorCode;
 use crate::state::UserObligation;
+use anchor_lang::prelude::UncheckedAccount;
+use anchor_lang::prelude::*;
+use arcium_anchor::prelude::*;
 
 use crate::{COMP_DEF_OFFSET_REPAY, ID, ID_CONST};
-
-
 
 #[callback_accounts("repay")]
 #[derive(Accounts)]
@@ -29,7 +27,7 @@ pub struct RepayCallback<'info> {
     /// CHECK: instructions_sysvar, checked by the account constraint
     #[account(address = ::anchor_lang::solana_program::sysvar::instructions::ID)]
     pub instructions_sysvar: AccountInfo<'info>,
-    
+
     #[account(
         mut,
         seeds = [UserObligation::SEED_PREFIX, user_obligation.user.as_ref(), user_obligation.pool.as_ref()],

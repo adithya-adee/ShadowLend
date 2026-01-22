@@ -1,7 +1,7 @@
+use crate::state::{Pool, UserObligation};
 use anchor_lang::prelude::*;
 use anchor_spl::token::{Token, TokenAccount};
 use arcium_anchor::prelude::*;
-use crate::state::{Pool, UserObligation};
 
 use crate::error::ErrorCode;
 use crate::{ArciumSignerAccount, COMP_DEF_OFFSET_BORROW, ID, ID_CONST};

@@ -87,5 +87,3 @@ pub fn deposit_handler(
     msg!("Deposited {} tokens", amount);
     Ok(())
 }
-
-

@@ -145,7 +145,11 @@ pub mod shadowlend_program {
 
             // Vault PDA signs the transfer
             let pool_key = ctx.accounts.pool.key();
-            let seeds: &[&[u8]] = &[b"borrow_vault", pool_key.as_ref(), &[ctx.bumps.borrow_vault]];
+            let seeds: &[&[u8]] = &[
+                b"borrow_vault",
+                pool_key.as_ref(),
+                &[ctx.bumps.borrow_vault],
+            ];
             let signer = &[&seeds[..]];
 
             let transfer_cpi = Transfer {
@@ -217,7 +221,11 @@ pub mod shadowlend_program {
 
             // Vault PDA signs the transfer
             let pool_key = ctx.accounts.pool.key();
-            let seeds: &[&[u8]] = &[b"collateral_vault", pool_key.as_ref(), &[ctx.bumps.collateral_vault]];
+            let seeds: &[&[u8]] = &[
+                b"collateral_vault",
+                pool_key.as_ref(),
+                &[ctx.bumps.collateral_vault],
+            ];
             let signer = &[&seeds[..]];
 
             let transfer_cpi = Transfer {
@@ -285,6 +293,22 @@ pub mod shadowlend_program {
         msg!("Repay callback completed");
         Ok(())
     }
+
+    pub fn init_deposit_comp_def(ctx: Context<InitDepositCompDef>) -> Result<()> {
+        crate::instructions::admin::init_deposit_comp_def_handler(ctx)
+    }
+    /// Initializes withdraw computation definition
+    pub fn init_withdraw_comp_def(ctx: Context<InitWithdrawCompDef>) -> Result<()> {
+        crate::instructions::admin::init_withdraw_comp_def_handler(ctx)
+    }
+
+    /// Initializes borrow computation definition
+    pub fn init_borrow_comp_def(ctx: Context<InitBorrowCompDef>) -> Result<()> {
+        crate::instructions::admin::init_borrow_comp_def_handler(ctx)
+    }
+
+    /// Initializes repay computation definition
+    pub fn init_repay_comp_def(ctx: Context<InitRepayCompDef>) -> Result<()> {
+        crate::instructions::admin::init_repay_comp_def_handler(ctx)
+    }
 }
-
-

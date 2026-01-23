@@ -78,5 +78,3 @@ pub fn borrow_handler(ctx: Context<Borrow>, computation_offset: u64, amount: u64
     msg!("Queued borrow computation for {} tokens", amount);
     Ok(())
 }
-
-

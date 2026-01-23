@@ -75,8 +75,9 @@ async function initializeComputationDefinitions() {
     const computationDefinitions: Record<string, string> = {};
 
     logSection("Initializing Definitions");
-    logInfo("Note: Computation definition initialization depends on your Arcium SDK version.");
-    console.log(chalk.gray("   This script creates placeholder entries. Update with actual Arcium SDK calls."));
+    logInfo("Note: Computation definitions are created via Arcium CLI.");
+
+    const { execSync } = require('child_process');
 
     for (const circuitName of circuits) {
       try {
@@ -95,17 +96,39 @@ async function initializeComputationDefinitions() {
         );
 
         // Check if computation definition already exists
-        const compDefAccount = await provider.connection.getAccountInfo(compDefPda);
+        let compDefAccount = await provider.connection.getAccountInfo(compDefPda);
         
         if (compDefAccount) {
           logEntry(circuitName, "Already exists", icons.checkmark);
           logEntry("Address", compDefPda.toBase58());
           computationDefinitions[circuitName] = compDefPda.toBase58();
         } else {
-          logEntry(circuitName, "Needs creation", icons.warning);
+          logEntry(circuitName, "Creating...", icons.rocket);
           logEntry("Expected Address", compDefPda.toBase58());
-          console.log(chalk.gray(`      You may need to run: arcium computation-definition create --circuit ${circuitName}`));
-          computationDefinitions[circuitName] = compDefPda.toBase58();
+          
+          try {
+             // Create via CLI
+             // Construct the command. Note: adjusting arguments based on potential CLI structure
+             // Assuming keypair is available at default location or handled by env/config
+             const command = `arcium computation create --circuit ${circuitName} --program-id ${programId.toBase58()}`;
+             logInfo(`Running command: ${command}`);
+             
+             // Execute command
+             execSync(command, { stdio: 'inherit' });
+             
+             // Verify creation
+             compDefAccount = await provider.connection.getAccountInfo(compDefPda);
+             if (compDefAccount) {
+                 logSuccess(`Successfully created definition for ${circuitName}`);
+                 computationDefinitions[circuitName] = compDefPda.toBase58();
+             } else {
+                 logError(`Creation reported success but account not found for ${circuitName}`);
+             }
+          } catch (cliError: any) {
+              logError(`Failed to create computation definition via CLI for ${circuitName}`, cliError);
+              // Fallback or exit depending on strictness. 
+              // Continuing loop to attempt others, but marking as failed in logs.
+          }
         }
       } catch (error: any) {
         logError(`   Failed to process ${circuitName}`, error);

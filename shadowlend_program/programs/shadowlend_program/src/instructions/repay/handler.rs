@@ -61,5 +61,3 @@ pub fn repay_handler(ctx: Context<Repay>, computation_offset: u64, amount: u64) 
     msg!("Repayed {} tokens", amount);
     Ok(())
 }
-
-

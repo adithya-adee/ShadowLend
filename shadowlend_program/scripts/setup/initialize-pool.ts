@@ -73,25 +73,33 @@ async function initializePool() {
     logEntry("LTV", `${ltvBps / 100}%`, icons.info);
     logEntry("Liquidation Threshold", `${liquidationThreshold / 100}%`, icons.warning);
 
-    logDivider();
-    logInfo("Initializing pool...");
-
-    // Initialize pool
-    const tx = await program.methods
-      .initializePool(ltvBps, liquidationThreshold)
-      .accounts({
-        authority: wallet.publicKey,
-        pool: poolPda,
-        collateralMint,
-        borrowMint,
-        systemProgram: SystemProgram.programId,
-      })
-      .rpc();
-
-    logSuccess("Pool initialized successfully!");
-    logEntry("Transaction", tx, icons.rocket);
+    // Check if pool already exists
+    const poolAccount = await provider.connection.getAccountInfo(poolPda);
     
-    await provider.connection.confirmTransaction(tx, "confirmed");
+    if (poolAccount) {
+      logEntry("Status", "Already Initialized", icons.checkmark);
+      logInfo("Pool already exists, skipping initialization.");
+    } else {
+      logDivider();
+      logInfo("Initializing pool...");
+
+      // Initialize pool
+      const tx = await program.methods
+        .initializePool(ltvBps, liquidationThreshold)
+        .accounts({
+          authority: wallet.publicKey,
+          pool: poolPda,
+          collateralMint,
+          borrowMint,
+          systemProgram: SystemProgram.programId,
+        })
+        .rpc();
+
+      logSuccess("Pool initialized successfully!");
+      logEntry("Transaction", tx, icons.rocket);
+      
+      await provider.connection.confirmTransaction(tx, "confirmed");
+    }
 
     // Update deployment state
     updateDeployment({

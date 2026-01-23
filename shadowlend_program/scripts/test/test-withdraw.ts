@@ -2,7 +2,7 @@ import { Wallet } from "@coral-xyz/anchor";
 import { PublicKey } from "@solana/web3.js";
 import { createProvider, getNetworkConfig, log, logSuccess, logError } from "../utils/config";
 import { getWalletKeypair, loadDeployment } from "../utils/deployment";
-import { createArciumClient } from "../utils/arcium";
+import { getMxeAccount } from "../utils/arcium";
 
 /**
  * Test withdraw instruction
@@ -19,7 +19,6 @@ async function testWithdraw() {
 
     // Create provider
     const provider = createProvider(wallet, config);
-    const arciumClient = createArciumClient(provider);
 
     // Load deployment
     const deployment = loadDeployment();
@@ -61,7 +60,7 @@ async function testWithdraw() {
     log(`   Computation Offset: ${computationOffset}`);
 
     // Get MXE account
-    const mxeAccount = await arciumClient.getMxeAccount();
+    const mxeAccount = getMxeAccount(programId);
     log(`   MXE Account: ${mxeAccount.toBase58()}`);
 
     log("\n⚠️  Withdraw test implementation pending");

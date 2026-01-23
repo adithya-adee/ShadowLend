@@ -1,6 +1,7 @@
 use crate::state::{Pool, UserObligation};
 use anchor_lang::prelude::*;
-use anchor_spl::token::{Token, TokenAccount};
+use anchor_spl::associated_token::AssociatedToken;
+use anchor_spl::token::{Mint, Token, TokenAccount};
 use arcium_anchor::prelude::*;
 
 use crate::error::ErrorCode;
@@ -17,9 +18,8 @@ pub struct Repay<'info> {
         init_if_needed,
         space = 9,
         payer = payer,
-        seeds = [&SIGN_PDA_SEED],
+        seeds = [b"ArciumSignerAccount"],
         bump,
-        address = derive_sign_pda!(),
     )]
     pub sign_pda_account: Box<Account<'info, ArciumSignerAccount>>,
     #[account(
@@ -77,8 +77,19 @@ pub struct Repay<'info> {
     )]
     pub user_obligation: Box<Account<'info, UserObligation>>,
 
+    #[account(
+        address = pool.borrow_mint
+    )]
+    pub borrow_mint: Box<Account<'info, Mint>>,
+
     /// Source of repayment tokens
-    #[account(mut)]
+    #[account(
+        init_if_needed,
+        payer = payer,
+        associated_token::mint = borrow_mint,
+        associated_token::authority = payer,
+        constraint = user_token_account.mint == borrow_mint.key() @ ErrorCode::InvalidMint,
+    )]
     pub user_token_account: Box<Account<'info, TokenAccount>>,
 
     /// Pool's borrow vault (destination of repayment)
@@ -90,6 +101,7 @@ pub struct Repay<'info> {
     pub borrow_vault: Box<Account<'info, TokenAccount>>,
 
     pub token_program: Program<'info, Token>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
     pub arcium_program: Program<'info, Arcium>,
 }

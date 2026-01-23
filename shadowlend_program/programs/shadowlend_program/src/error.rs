@@ -22,4 +22,10 @@ pub enum ErrorCode {
 
     #[msg("Cluster not set")]
     ClusterNotSet,
+
+    #[msg("Invalid Token Mint")]
+    InvalidMint,
+
+    #[msg("Unauthorized")]
+    Unauthorized,
 }

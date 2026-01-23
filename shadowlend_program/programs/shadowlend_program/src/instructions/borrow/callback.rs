@@ -42,7 +42,10 @@ pub struct BorrowCallback<'info> {
     )]
     pub pool: Box<Account<'info, Pool>>,
 
-    #[account(mut)]
+    #[account(
+        mut,
+        constraint = user_token_account.mint == pool.borrow_mint @ ErrorCode::InvalidMint
+    )]
     pub user_token_account: Box<Account<'info, TokenAccount>>,
 
     #[account(

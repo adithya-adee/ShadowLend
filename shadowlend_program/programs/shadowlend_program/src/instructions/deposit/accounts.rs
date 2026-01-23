@@ -1,6 +1,7 @@
 use crate::state::{Pool, UserObligation};
 use anchor_lang::prelude::*;
-use anchor_spl::token::{Token, TokenAccount};
+use anchor_spl::associated_token::AssociatedToken;
+use anchor_spl::token::{Mint, Token, TokenAccount};
 use arcium_anchor::prelude::*;
 
 use crate::error::ErrorCode;
@@ -18,9 +19,8 @@ pub struct Deposit<'info> {
         init_if_needed,
         space = 9,
         payer = payer,
-        seeds = [&SIGN_PDA_SEED],
+        seeds = [b"ArciumSignerAccount"],
         bump,
-        address = derive_sign_pda!(),
     )]
     pub sign_pda_account: Box<Account<'info, ArciumSignerAccount>>,
     #[account(
@@ -80,8 +80,19 @@ pub struct Deposit<'info> {
     )]
     pub user_obligation: Box<Account<'info, UserObligation>>,
 
+    #[account(
+        address = pool.collateral_mint
+    )]
+    pub collateral_mint: Box<Account<'info, Mint>>,
+
     /// User's token account (source of deposit)
-    #[account(mut)]
+    #[account(
+        init_if_needed,
+        payer = payer,
+        associated_token::mint = collateral_mint,
+        associated_token::authority = payer,
+        constraint = user_token_account.mint == collateral_mint.key() @ ErrorCode::InvalidMint,
+    )]
     pub user_token_account: Box<Account<'info, TokenAccount>>,
 
     /// Pool's collateral vault
@@ -93,6 +104,7 @@ pub struct Deposit<'info> {
     pub collateral_vault: Box<Account<'info, TokenAccount>>,
 
     pub token_program: Program<'info, Token>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
     pub arcium_program: Program<'info, Arcium>,
 }

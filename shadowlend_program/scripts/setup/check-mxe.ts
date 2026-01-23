@@ -1,4 +1,5 @@
 import { Wallet } from "@coral-xyz/anchor";
+import { PublicKey } from "@solana/web3.js";
 import {
   createProvider,
   getNetworkConfig,
@@ -7,12 +8,11 @@ import {
   logError,
 } from "../utils/config";
 import {
-  createArciumClient,
   getMxeAccount,
   checkMxeInitialized,
   checkMxeKeysSet,
 } from "../utils/arcium";
-import { getWalletKeypair } from "../utils/deployment";
+import { getWalletKeypair, loadDeployment } from "../utils/deployment";
 
 /**
  * Check MXE initialization and key status
@@ -27,13 +27,20 @@ async function checkMxe() {
     const walletKeypair = getWalletKeypair();
     const wallet = new Wallet(walletKeypair);
 
-    // Create provider and Arcium client
+    // Create provider
     const provider = createProvider(wallet, config);
-    const arciumClient = createArciumClient(provider);
+    
+    // Load deployment to get program ID
+    const deployment = loadDeployment();
+    if (!deployment || !deployment.programId) {
+      throw new Error("Program ID not found in deployment.json. Please deploy the program first.");
+    }
+    
+    const programId = new PublicKey(deployment.programId);
 
     // Check MXE initialization
     log("🔍 Checking MXE initialization...");
-    const mxeInitialized = await checkMxeInitialized(arciumClient);
+    const mxeInitialized = await checkMxeInitialized(provider, programId);
 
     if (!mxeInitialized) {
       logError("MXE is NOT initialized");
@@ -43,13 +50,13 @@ async function checkMxe() {
       process.exit(1);
     }
 
-    const mxeAccount = await getMxeAccount(arciumClient);
+    const mxeAccount = getMxeAccount(programId);
     logSuccess("MXE is initialized");
     log(`   MXE Account: ${mxeAccount.toBase58()}`);
 
     // Check MXE keys (DKG status)
     log("\n🔍 Checking MXE keys (DKG status)...");
-    const keysSet = await checkMxeKeysSet(arciumClient);
+    const keysSet = await checkMxeKeysSet(provider, programId);
 
     if (!keysSet) {
       logError("MXE keys are NOT set (DKG not complete)");
@@ -65,14 +72,20 @@ async function checkMxe() {
 
     logSuccess("MXE keys are set (DKG complete)");
 
-    // Fetch and display MXE data
+    // Display MXE details
+    log("\n📊 MXE Details:");
+    log(`   Cluster Offset: ${config.arciumClusterOffset}`);
+    log(`   MXE Account: ${mxeAccount.toBase58()}`);
+    log(`   Program ID: ${programId.toBase58()}`);
+    
+    // Fetch account data to show size
     try {
-      const mxeData = await arciumClient.program.account.mxe.fetch(mxeAccount);
-      log("\n📊 MXE Details:");
-      log(`   Cluster Offset: ${config.arciumClusterOffset}`);
-      log(`   Public Key: ${Buffer.from((mxeData as any).publicKey).toString("hex").substring(0, 32)}...`);
+      const accountInfo = await provider.connection.getAccountInfo(mxeAccount);
+      if (accountInfo) {
+        log(`   Account Data Size: ${accountInfo.data.length} bytes`);
+      }
     } catch (error) {
-      log("\n⚠️  Could not fetch MXE details (this is normal for some SDK versions)");
+      log("   Could not fetch account details");
     }
 
     logSuccess("\n✅ MXE is fully operational!");

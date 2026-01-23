@@ -8,10 +8,10 @@ import {
   logError,
 } from "../utils/config";
 import {
-  createArciumClient,
   getMxeAccount,
   checkMxeInitialized,
   checkMxeKeysSet,
+  getArciumProgramInstance,
 } from "../utils/arcium";
 import { getWalletKeypair, loadDeployment, updateDeployment } from "../utils/deployment";
 
@@ -28,28 +28,8 @@ async function initializeComputationDefinitions() {
     const wallet = new Wallet(walletKeypair);
     log(`Using wallet: ${wallet.publicKey.toBase58()}`);
 
-    // Create provider and Arcium client
+    // Create provider
     const provider = createProvider(wallet, config);
-    const arciumClient = createArciumClient(provider);
-
-    // Check MXE status
-    log("Checking MXE status...");
-    const mxeInitialized = await checkMxeInitialized(arciumClient);
-    
-    if (!mxeInitialized) {
-      throw new Error("MXE not initialized. Please initialize MXE first.");
-    }
-
-    const mxeAccount = await getMxeAccount(arciumClient);
-    log(`MXE Account: ${mxeAccount.toBase58()}`);
-
-    const keysSet = await checkMxeKeysSet(arciumClient);
-    if (!keysSet) {
-      log("⚠️  MXE keys not set yet. DKG may still be in progress.");
-      log("   Computation definitions can be initialized, but computations won't work until DKG completes.");
-    } else {
-      logSuccess("MXE keys are set!");
-    }
 
     // Load deployment
     const deployment = loadDeployment();
@@ -59,46 +39,66 @@ async function initializeComputationDefinitions() {
 
     const programId = new PublicKey(deployment.programId);
 
+    // Check MXE status
+    log("Checking MXE status...");
+    const mxeInitialized = await checkMxeInitialized(provider, programId);
+    
+    if (!mxeInitialized) {
+      throw new Error("MXE not initialized. Please initialize MXE first.");
+    }
+
+    const mxeAccount = getMxeAccount(programId);
+    log(`MXE Account: ${mxeAccount.toBase58()}`);
+
+    const keysSet = await checkMxeKeysSet(provider, programId);
+    if (!keysSet) {
+      log("⚠️  MXE keys not set yet. DKG may still be in progress.");
+      log("   Computation definitions can be initialized, but computations won't work until DKG completes.");
+    } else {
+      logSuccess("MXE keys are set!");
+    }
+
+
+
     // Circuit names
     const circuits = ["deposit", "withdraw", "borrow", "repay"];
     const computationDefinitions: Record<string, string> = {};
 
     log("\nInitializing computation definitions...");
+    log("⚠️  Note: Computation definition initialization depends on your Arcium SDK version.");
+    log("   This script creates placeholder entries. Update with actual Arcium SDK calls.");
 
     for (const circuitName of circuits) {
       try {
         log(`\n📝 Processing circuit: ${circuitName}`);
 
-        // Initialize computation definition using Arcium client
-        // Note: The actual implementation depends on Arcium SDK version
+        // Derive computation definition PDA
         // This is a placeholder - adjust based on your Arcium SDK
-        const compDefTx = await arciumClient.initializeComputationDefinition({
-          circuitName,
-          programId,
-        });
-
-        log(`   Transaction: ${compDefTx}`);
-        await provider.connection.confirmTransaction(compDefTx, "confirmed");
-
-        // Get computation definition address
-        const compDefAddress = arciumClient.getComputationDefinitionAddress(
-          circuitName,
-          programId
+        const arciumProgram = getArciumProgramInstance(provider);
+        const [compDefPda] = PublicKey.findProgramAddressSync(
+          [
+            Buffer.from("computation_definition"),
+            mxeAccount.toBuffer(),
+            Buffer.from(circuitName),
+          ],
+          arciumProgram.programId
         );
 
-        computationDefinitions[circuitName] = compDefAddress.toBase58();
-        logSuccess(`   ${circuitName} computation definition initialized`);
-      } catch (error: any) {
-        if (error.message?.includes("already in use")) {
+        // Check if computation definition already exists
+        const compDefAccount = await provider.connection.getAccountInfo(compDefPda);
+        
+        if (compDefAccount) {
           log(`   ℹ️  ${circuitName} computation definition already exists`);
-          const compDefAddress = arciumClient.getComputationDefinitionAddress(
-            circuitName,
-            programId
-          );
-          computationDefinitions[circuitName] = compDefAddress.toBase58();
+          computationDefinitions[circuitName] = compDefPda.toBase58();
         } else {
-          throw error;
+          log(`   ⚠️  ${circuitName} computation definition needs to be created`);
+          log(`      Expected address: ${compDefPda.toBase58()}`);
+          log(`      You may need to run: arcium computation-definition create --circuit ${circuitName}`);
+          computationDefinitions[circuitName] = compDefPda.toBase58();
         }
+      } catch (error: any) {
+        logError(`   Failed to process ${circuitName}`, error);
+        throw error;
       }
     }
 

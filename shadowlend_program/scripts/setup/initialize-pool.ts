@@ -47,44 +47,28 @@ async function initializePool() {
 
     log(`Pool PDA: ${poolPda.toBase58()}`);
 
-    // Check if pool already exists
-    const poolAccount = await provider.connection.getAccountInfo(poolPda);
-    if (poolAccount) {
-      logSuccess("Pool already initialized!");
-      log(`Pool address: ${poolPda.toBase58()}`);
-      return;
-    }
-
-    // Derive vault PDAs
-    const [collateralVault] = PublicKey.findProgramAddressSync(
-      [Buffer.from("collateral_vault"), poolPda.toBuffer()],
-      programId
-    );
-
-    const [borrowVault] = PublicKey.findProgramAddressSync(
-      [Buffer.from("borrow_vault"), poolPda.toBuffer()],
-      programId
-    );
-
-    log(`Collateral Vault: ${collateralVault.toBase58()}`);
-    log(`Borrow Vault: ${borrowVault.toBase58()}`);
-
     // Pool configuration
     const ltvBps = 7500; // 75% LTV
     const liquidationThreshold = 8000; // 80% liquidation threshold
 
+    // Token mints - using common devnet tokens
+    // For production, these should be configurable
+    const collateralMint = new PublicKey("4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"); // USDC devnet
+    const borrowMint = new PublicKey("So11111111111111111111111111111111111111112"); // Wrapped SOL
+
+    log(`Collateral Mint (USDC): ${collateralMint.toBase58()}`);
+    log(`Borrow Mint (SOL): ${borrowMint.toBase58()}`);
     log(`Initializing pool with LTV: ${ltvBps / 100}%, Liquidation: ${liquidationThreshold / 100}%`);
 
     // Initialize pool
     const tx = await program.methods
       .initializePool(ltvBps, liquidationThreshold)
       .accounts({
+        authority: wallet.publicKey,
         pool: poolPda,
-        collateralVault,
-        borrowVault,
-        payer: wallet.publicKey,
+        collateralMint,
+        borrowMint,
         systemProgram: SystemProgram.programId,
-        tokenProgram: new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"),
       })
       .rpc();
 
@@ -94,14 +78,14 @@ async function initializePool() {
     // Update deployment state
     updateDeployment({
       poolAddress: poolPda.toBase58(),
-      collateralVault: collateralVault.toBase58(),
-      borrowVault: borrowVault.toBase58(),
+      collateralMint: collateralMint.toBase58(),
+      borrowMint: borrowMint.toBase58(),
     });
 
     logSuccess("Pool initialized successfully!");
     log(`Pool: ${poolPda.toBase58()}`);
-    log(`Collateral Vault: ${collateralVault.toBase58()}`);
-    log(`Borrow Vault: ${borrowVault.toBase58()}`);
+    log(`Collateral Mint: ${collateralMint.toBase58()}`);
+    log(`Borrow Mint: ${borrowMint.toBase58()}`);
   } catch (error) {
     logError("Failed to initialize pool", error);
     process.exit(1);

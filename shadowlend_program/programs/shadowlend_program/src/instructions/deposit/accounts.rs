@@ -22,11 +22,11 @@ pub struct Deposit<'info> {
         bump,
         address = derive_sign_pda!(),
     )]
-    pub sign_pda_account: Account<'info, ArciumSignerAccount>,
+    pub sign_pda_account: Box<Account<'info, ArciumSignerAccount>>,
     #[account(
         address = derive_mxe_pda!()
     )]
-    pub mxe_account: Account<'info, MXEAccount>,
+    pub mxe_account: Box<Account<'info, MXEAccount>>,
     #[account(
         mut,
         address = derive_mempool_pda!(mxe_account, ErrorCode::ClusterNotSet)
@@ -48,28 +48,28 @@ pub struct Deposit<'info> {
     #[account(
         address = derive_comp_def_pda!(COMP_DEF_OFFSET_DEPOSIT)
     )]
-    pub comp_def_account: Account<'info, ComputationDefinitionAccount>,
+    pub comp_def_account: Box<Account<'info, ComputationDefinitionAccount>>,
     #[account(
         mut,
         address = derive_cluster_pda!(mxe_account, ErrorCode::ClusterNotSet)
     )]
-    pub cluster_account: Account<'info, Cluster>,
+    pub cluster_account: Box<Account<'info, Cluster>>,
     #[account(
         mut,
         address = ARCIUM_FEE_POOL_ACCOUNT_ADDRESS,
     )]
-    pub pool_account: Account<'info, FeePool>,
+    pub pool_account: Box<Account<'info, FeePool>>,
     #[account(
         mut,
         address = ARCIUM_CLOCK_ACCOUNT_ADDRESS
     )]
-    pub clock_account: Account<'info, ClockAccount>,
+    pub clock_account: Box<Account<'info, ClockAccount>>,
 
     #[account(
         seeds = [Pool::SEED_PREFIX],
         bump = pool.bump
     )]
-    pub pool: Account<'info, Pool>,
+    pub pool: Box<Account<'info, Pool>>,
 
     #[account(
         init_if_needed,
@@ -78,11 +78,11 @@ pub struct Deposit<'info> {
         seeds = [UserObligation::SEED_PREFIX, payer.key().as_ref(), pool.key().as_ref()],
         bump
     )]
-    pub user_obligation: Account<'info, UserObligation>,
+    pub user_obligation: Box<Account<'info, UserObligation>>,
 
     /// User's token account (source of deposit)
     #[account(mut)]
-    pub user_token_account: Account<'info, TokenAccount>,
+    pub user_token_account: Box<Account<'info, TokenAccount>>,
 
     /// Pool's collateral vault
     #[account(
@@ -90,7 +90,7 @@ pub struct Deposit<'info> {
         seeds = [b"collateral_vault", pool.key().as_ref()],
         bump
     )]
-    pub collateral_vault: Account<'info, TokenAccount>,
+    pub collateral_vault: Box<Account<'info, TokenAccount>>,
 
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,

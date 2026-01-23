@@ -1,5 +1,6 @@
 import { Connection, PublicKey } from "@solana/web3.js";
 import { AnchorProvider, Program, Wallet } from "@coral-xyz/anchor";
+import chalk from "chalk";
 
 /**
  * Network configuration type
@@ -104,28 +105,60 @@ export function formatSOL(lamports: number): string {
 }
 
 /**
- * Log with timestamp
+ * Log with timestamp and color
  */
 export function log(message: string, ...args: any[]): void {
   const timestamp = new Date().toISOString();
-  console.log(`[${timestamp}] ${message}`, ...args);
+  console.log(chalk.gray(`[${timestamp}]`), message, ...args);
 }
 
 /**
- * Log error with timestamp
+ * Log info message with blue color
+ */
+export function logInfo(message: string, ...args: any[]): void {
+  const timestamp = new Date().toISOString();
+  console.log(chalk.gray(`[${timestamp}]`), chalk.blue(`ℹ ${message}`), ...args);
+}
+
+/**
+ * Log warning with yellow color
+ */
+export function logWarning(message: string, ...args: any[]): void {
+  const timestamp = new Date().toISOString();
+  console.log(chalk.gray(`[${timestamp}]`), chalk.yellow(`⚠️  ${message}`), ...args);
+}
+
+/**
+ * Log error with red color and timestamp
  */
 export function logError(message: string, error?: any): void {
   const timestamp = new Date().toISOString();
-  console.error(`[${timestamp}] ❌ ${message}`);
+  console.error(chalk.gray(`[${timestamp}]`), chalk.red(`❌ ${message}`));
   if (error) {
-    console.error(error);
+    console.error(chalk.red(error));
   }
 }
 
 /**
- * Log success with timestamp
+ * Log success with green color and timestamp
  */
 export function logSuccess(message: string): void {
   const timestamp = new Date().toISOString();
-  console.log(`[${timestamp}] ✅ ${message}`);
+  console.log(chalk.gray(`[${timestamp}]`), chalk.green(`✅ ${message}`));
+}
+
+/**
+ * Log step/section header with cyan color
+ */
+export function logHeader(message: string): void {
+  console.log(chalk.cyan.bold(`\n${'='.repeat(60)}`));
+  console.log(chalk.cyan.bold(`  ${message}`));
+  console.log(chalk.cyan.bold(`${'='.repeat(60)}\n`));
+}
+
+/**
+ * Log data field with label
+ */
+export function logField(label: string, value: string): void {
+  console.log(chalk.gray(`   ${label}:`), chalk.white(value));
 }

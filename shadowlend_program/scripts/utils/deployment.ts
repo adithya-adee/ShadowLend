@@ -9,8 +9,8 @@ export interface DeploymentState {
   network: string;
   programId: string;
   poolAddress?: string;
-  collateralVault?: string;
-  borrowVault?: string;
+  collateralMint?: string;
+  borrowMint?: string;
   mxeAccount?: string;
   computationDefinitions?: {
     deposit?: string;

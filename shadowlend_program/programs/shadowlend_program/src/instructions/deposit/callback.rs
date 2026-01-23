@@ -15,17 +15,17 @@ pub struct DepositCallback<'info> {
     #[account(
         address = derive_comp_def_pda!(COMP_DEF_OFFSET_DEPOSIT)
     )]
-    pub comp_def_account: Account<'info, ComputationDefinitionAccount>,
+    pub comp_def_account: Box<Account<'info, ComputationDefinitionAccount>>,
     #[account(
         address = derive_mxe_pda!()
     )]
-    pub mxe_account: Account<'info, MXEAccount>,
+    pub mxe_account: Box<Account<'info, MXEAccount>>,
     /// CHECK: Checked by Arcium program
     pub computation_account: UncheckedAccount<'info>,
     #[account(
         address = derive_cluster_pda!(mxe_account, ErrorCode::ClusterNotSet)
     )]
-    pub cluster_account: Account<'info, Cluster>,
+    pub cluster_account: Box<Account<'info, Cluster>>,
 
     /// CHECK: instructions_sysvar, checked by the account constraint
     #[account(address = ::anchor_lang::solana_program::sysvar::instructions::ID)]
@@ -37,5 +37,5 @@ pub struct DepositCallback<'info> {
         seeds = [UserObligation::SEED_PREFIX, user_obligation.user.as_ref(), user_obligation.pool.as_ref()],
         bump = user_obligation.bump
     )]
-    pub user_obligation: Account<'info, UserObligation>,
+    pub user_obligation: Box<Account<'info, UserObligation>>,
 }

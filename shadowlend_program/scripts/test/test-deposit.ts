@@ -18,6 +18,7 @@ import {
 } from "../utils/config";
 import { getWalletKeypair, loadDeployment } from "../utils/deployment";
 import { getMxeAccount, getArciumProgramInstance, generateComputationOffset, waitForComputationFinalization } from "../utils/arcium";
+import { getCompDefAccOffset, getCompDefAccAddress, getClusterAccAddress, getComputationAccAddress, getExecutingPoolAccAddress, getMempoolAccAddress } from "@arcium-hq/client";
 import * as idl from "../../target/idl/shadowlend_program.json";
 
 const ARCIUM_PROGRAM_ID = new PublicKey("Arcj82pX7HxYKLR92qvgZUAd7vGS1k4hQvAFcPATFdEQ");
@@ -152,40 +153,21 @@ async function testDeposit() {
     logEntry("MXE Account", mxeAccount.toBase58(), icons.key);
 
     // Derive Arcium-related accounts
-    const [mempoolAccount] = PublicKey.findProgramAddressSync(
-      [Buffer.from("Mempool"), mxeAccount.toBuffer()],
-      arciumProgram.programId
+    const mempoolAccount = getMempoolAccAddress(config.arciumClusterOffset)
+
+    const executingPool = getExecutingPoolAccAddress(config.arciumClusterOffset);
+
+    const computationAccount = getComputationAccAddress(config.arciumClusterOffset, computationOffset)
+
+    const compDefOffsetBytes = getCompDefAccOffset("deposit");
+    const compDefOffset = Buffer.from(compDefOffsetBytes).readUInt32LE();
+    const compDefAccount = getCompDefAccAddress(
+      programId,
+      compDefOffset,
     );
 
-    const [executingPool] = PublicKey.findProgramAddressSync(
-      [Buffer.from("ExecutingPool"), mxeAccount.toBuffer()],
-      arciumProgram.programId
-    );
+    const clusterAccount = getClusterAccAddress(config.arciumClusterOffset)
 
-    const [computationAccount] = PublicKey.findProgramAddressSync(
-      [
-        Buffer.from("ComputationAccount"),
-        mxeAccount.toBuffer(),
-        computationOffset.toArrayLike(Buffer, "le", 8),
-      ],
-      arciumProgram.programId
-    );
-
-    const [compDefAccount] = PublicKey.findProgramAddressSync(
-      [
-        Buffer.from("computation_definition"),
-        mxeAccount.toBuffer(),
-        Buffer.from("deposit"),
-      ],
-      arciumProgram.programId
-    );
-
-    const [clusterAccount] = PublicKey.findProgramAddressSync(
-      [Buffer.from("Cluster"), new BN(config.arciumClusterOffset).toArrayLike(Buffer, "le", 8)],
-      arciumProgram.programId
-    );
-
-    // Arcium pool and clock accounts (from IDL)
     const poolAccount = new PublicKey("G2sRWJvi3xoyh5k2gY49eG9L8YhAEWQPtNb1zb1GXTtC");
     const clockAccount = new PublicKey("7EbMUTLo5DjdzbN7s8BXeZwXzEwNQb1hScfRvWg8a6ot");
 

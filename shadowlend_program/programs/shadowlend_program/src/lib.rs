@@ -22,8 +22,8 @@ pub mod shadowlend_program {
     use super::*;
     use crate::error::ErrorCode;
     use crate::instructions::{
-        Borrow, BorrowCallback, Deposit, DepositCallback, InitializePool, Repay, RepayCallback,
-        Withdraw, WithdrawCallback,
+        Borrow, BorrowCallback, ClosePool, Deposit, DepositCallback, InitializePool, Repay,
+        RepayCallback, Withdraw, WithdrawCallback,
     };
 
     /// Initializes the lending pool with risk parameters.
@@ -294,9 +294,11 @@ pub mod shadowlend_program {
         Ok(())
     }
 
+    /// Initializes deposit computation definition
     pub fn init_deposit_comp_def(ctx: Context<InitDepositCompDef>) -> Result<()> {
         crate::instructions::admin::init_deposit_comp_def_handler(ctx)
     }
+
     /// Initializes withdraw computation definition
     pub fn init_withdraw_comp_def(ctx: Context<InitWithdrawCompDef>) -> Result<()> {
         crate::instructions::admin::init_withdraw_comp_def_handler(ctx)
@@ -310,5 +312,10 @@ pub mod shadowlend_program {
     /// Initializes repay computation definition
     pub fn init_repay_comp_def(ctx: Context<InitRepayCompDef>) -> Result<()> {
         crate::instructions::admin::init_repay_comp_def_handler(ctx)
+    }
+
+    /// Closes the lending pool (admin only)
+    pub fn close_pool(ctx: Context<ClosePool>) -> Result<()> {
+        crate::instructions::close_pool_handler(ctx)
     }
 }

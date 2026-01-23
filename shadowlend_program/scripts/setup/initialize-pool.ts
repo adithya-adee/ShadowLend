@@ -1,5 +1,6 @@
 import { Wallet } from "@coral-xyz/anchor";
 import { PublicKey, SystemProgram } from "@solana/web3.js";
+import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import {
   createProvider,
   getNetworkConfig,
@@ -83,7 +84,20 @@ async function initializePool() {
       logDivider();
       logInfo("Initializing pool...");
 
-      // Initialize pool
+      // Derive vault PDAs
+      const [collateralVault] = PublicKey.findProgramAddressSync(
+        [Buffer.from("collateral_vault"), poolPda.toBuffer()],
+        programId
+      );
+      const [borrowVault] = PublicKey.findProgramAddressSync(
+        [Buffer.from("borrow_vault"), poolPda.toBuffer()],
+        programId
+      );
+
+      logEntry("Collateral Vault", collateralVault.toBase58(), icons.link);
+      logEntry("Borrow Vault", borrowVault.toBase58(), icons.link);
+
+      // Initialize pool (this will also create the vaults)
       const tx = await program.methods
         .initializePool(ltvBps, liquidationThreshold)
         .accounts({
@@ -91,6 +105,9 @@ async function initializePool() {
           pool: poolPda,
           collateralMint,
           borrowMint,
+          collateralVault,
+          borrowVault,
+          tokenProgram: TOKEN_PROGRAM_ID,
           systemProgram: SystemProgram.programId,
         })
         .rpc();

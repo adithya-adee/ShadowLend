@@ -1,5 +1,5 @@
-import { Wallet } from "@coral-xyz/anchor";
-import { PublicKey } from "@solana/web3.js";
+import { Wallet, Program } from "@coral-xyz/anchor";
+import { PublicKey, SystemProgram } from "@solana/web3.js";
 import chalk from "chalk";
 import {
   createProvider,
@@ -12,7 +12,8 @@ import {
   logInfo,
   logDivider,
   logWarning,
-  icons
+  icons,
+  loadProgram
 } from "../utils/config";
 import {
   getMxeAccount,
@@ -21,6 +22,7 @@ import {
   getArciumProgramInstance,
 } from "../utils/arcium";
 import { getWalletKeypair, loadDeployment, updateDeployment } from "../utils/deployment";
+import { getCompDefAccOffset, getCompDefAccAddress } from "@arcium-hq/client";
 
 /**
  * Initialize Arcium computation definitions for all circuits
@@ -50,6 +52,10 @@ async function initializeComputationDefinitions() {
     const programId = new PublicKey(deployment.programId);
     logEntry("Program ID", programId.toBase58(), icons.folder);
 
+    // Load Program
+    const idl = require("../../target/idl/shadowlend_program.json");
+    const program = await loadProgram(provider, programId, idl);
+
     // Check MXE status
     logSection("MXE Status");
     logInfo("Verifying MXE initialization...");
@@ -62,41 +68,35 @@ async function initializeComputationDefinitions() {
     const mxeAccount = getMxeAccount(programId);
     logEntry("MXE Account", mxeAccount.toBase58(), icons.key);
 
-    const keysSet = await checkMxeKeysSet(provider, programId);
-    if (!keysSet) {
-      logWarning("MXE keys not set yet. DKG may still be in progress.");
-      console.log(chalk.gray("   Computation definitions can be initialized, but computations won't work until DKG completes."));
-    } else {
-      logSuccess("MXE keys are set!");
-    }
-
-    // Circuit names
-    const circuits = ["deposit", "withdraw", "borrow", "repay"];
+    // Circuit configuration
+    const circuits = [
+      { name: "deposit", method: "initDepositCompDef" },
+      { name: "withdraw", method: "initWithdrawCompDef" },
+      { name: "borrow", method: "initBorrowCompDef" },
+      { name: "repay", method: "initRepayCompDef" },
+    ];
+    
     const computationDefinitions: Record<string, string> = {};
 
     logSection("Initializing Definitions");
-    logInfo("Note: Computation definitions are created via Arcium CLI.");
+    const arciumProgram = getArciumProgramInstance(provider);
 
-    const { execSync } = require('child_process');
-
-    for (const circuitName of circuits) {
+    for (const circuit of circuits) {
+      const circuitName = circuit.name;
       try {
         logDivider();
         logInfo(`Processing circuit: ${circuitName}`);
 
-        // Derive computation definition PDA
-        const arciumProgram = getArciumProgramInstance(provider);
-        const [compDefPda] = PublicKey.findProgramAddressSync(
-          [
-            Buffer.from("computation_definition"),
-            mxeAccount.toBuffer(),
-            Buffer.from(circuitName),
-          ],
-          arciumProgram.programId
+        const compDefOffsetBytes = getCompDefAccOffset(circuitName);
+        const compDefOffset = Buffer.from(compDefOffsetBytes).readUInt32LE();
+
+        const compDefPda = getCompDefAccAddress(
+          programId,
+          compDefOffset,
         );
 
         // Check if computation definition already exists
-        let compDefAccount = await provider.connection.getAccountInfo(compDefPda);
+        const compDefAccount = await provider.connection.getAccountInfo(compDefPda);
         
         if (compDefAccount) {
           logEntry(circuitName, "Already exists", icons.checkmark);
@@ -106,33 +106,31 @@ async function initializeComputationDefinitions() {
           logEntry(circuitName, "Creating...", icons.rocket);
           logEntry("Expected Address", compDefPda.toBase58());
           
-          try {
-             // Create via CLI
-             // Construct the command. Note: adjusting arguments based on potential CLI structure
-             // Assuming keypair is available at default location or handled by env/config
-             const command = `arcium computation create --circuit ${circuitName} --program-id ${programId.toBase58()}`;
-             logInfo(`Running command: ${command}`);
-             
-             // Execute command
-             execSync(command, { stdio: 'inherit' });
-             
-             // Verify creation
-             compDefAccount = await provider.connection.getAccountInfo(compDefPda);
-             if (compDefAccount) {
-                 logSuccess(`Successfully created definition for ${circuitName}`);
-                 computationDefinitions[circuitName] = compDefPda.toBase58();
-             } else {
-                 logError(`Creation reported success but account not found for ${circuitName}`);
-             }
-          } catch (cliError: any) {
-              logError(`Failed to create computation definition via CLI for ${circuitName}`, cliError);
-              // Fallback or exit depending on strictness. 
-              // Continuing loop to attempt others, but marking as failed in logs.
+          // Call the specific instruction
+          const method = (program.methods as any)[circuit.method];
+          if (!method) {
+             throw new Error(`Method ${circuit.method} not found in program`);
           }
+
+          const tx = await method()
+            .accounts({
+              authority: wallet.publicKey,
+              mxeAccount: mxeAccount,
+              compDefAccount: compDefPda,
+              arciumProgram: arciumProgram.programId,
+              systemProgram: SystemProgram.programId,
+            })
+            .rpc();
+            
+          logSuccess(`Created ${circuitName} definition`);
+          logEntry("Transaction", tx, icons.link);
+          computationDefinitions[circuitName] = compDefPda.toBase58();
+          
+          await provider.connection.confirmTransaction(tx, "confirmed");
         }
       } catch (error: any) {
         logError(`   Failed to process ${circuitName}`, error);
-        throw error;
+        // Continue with other circuits but log error
       }
     }
 
@@ -143,7 +141,7 @@ async function initializeComputationDefinitions() {
     });
 
     logSection("Initialization Summary");
-    logSuccess("All computation definitions initialized!");
+    logSuccess("Computation definitions processing complete!");
     logDivider();
     
     for (const [name, address] of Object.entries(computationDefinitions)) {

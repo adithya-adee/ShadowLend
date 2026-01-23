@@ -1,6 +1,6 @@
 use crate::state::Pool;
 use anchor_lang::prelude::*;
-use anchor_spl::token::Mint;
+use anchor_spl::token::{Mint, Token, TokenAccount};
 
 /// Initialize lending pool
 #[derive(Accounts)]
@@ -20,6 +20,29 @@ pub struct InitializePool<'info> {
     pub collateral_mint: Account<'info, Mint>,
     pub borrow_mint: Account<'info, Mint>,
 
+    /// Collateral vault token account
+    #[account(
+        init,
+        payer = authority,
+        token::mint = collateral_mint,
+        token::authority = collateral_vault,
+        seeds = [b"collateral_vault", pool.key().as_ref()],
+        bump
+    )]
+    pub collateral_vault: Account<'info, TokenAccount>,
+
+    /// Borrow vault token account
+    #[account(
+        init,
+        payer = authority,
+        token::mint = borrow_mint,
+        token::authority = borrow_vault,
+        seeds = [b"borrow_vault", pool.key().as_ref()],
+        bump
+    )]
+    pub borrow_vault: Account<'info, TokenAccount>,
+
+    pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
 }
 
@@ -42,6 +65,8 @@ pub fn initialize_pool_handler(
         ltv_bps,
         liquidation_threshold
     );
+    msg!("Collateral vault: {}", ctx.accounts.collateral_vault.key());
+    msg!("Borrow vault: {}", ctx.accounts.borrow_vault.key());
 
     Ok(())
 }

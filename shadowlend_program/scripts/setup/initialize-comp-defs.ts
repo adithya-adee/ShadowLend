@@ -1,11 +1,18 @@
 import { Wallet } from "@coral-xyz/anchor";
 import { PublicKey } from "@solana/web3.js";
+import chalk from "chalk";
 import {
   createProvider,
   getNetworkConfig,
-  log,
+  logHeader,
+  logSection,
+  logEntry,
   logSuccess,
   logError,
+  logInfo,
+  logDivider,
+  logWarning,
+  icons
 } from "../utils/config";
 import {
   getMxeAccount,
@@ -21,12 +28,15 @@ import { getWalletKeypair, loadDeployment, updateDeployment } from "../utils/dep
 async function initializeComputationDefinitions() {
   try {
     const config = getNetworkConfig();
-    log(`Initializing computation definitions on ${config.name}...`);
+    logHeader("Initialize Computation Definitions");
 
     // Load wallet
     const walletKeypair = getWalletKeypair();
     const wallet = new Wallet(walletKeypair);
-    log(`Using wallet: ${wallet.publicKey.toBase58()}`);
+
+    logSection("Configuration");
+    logEntry("Network", config.name, icons.sparkle);
+    logEntry("Wallet", wallet.publicKey.toBase58(), icons.key);
 
     // Create provider
     const provider = createProvider(wallet, config);
@@ -38,9 +48,11 @@ async function initializeComputationDefinitions() {
     }
 
     const programId = new PublicKey(deployment.programId);
+    logEntry("Program ID", programId.toBase58(), icons.folder);
 
     // Check MXE status
-    log("Checking MXE status...");
+    logSection("MXE Status");
+    logInfo("Verifying MXE initialization...");
     const mxeInitialized = await checkMxeInitialized(provider, programId);
     
     if (!mxeInitialized) {
@@ -48,32 +60,30 @@ async function initializeComputationDefinitions() {
     }
 
     const mxeAccount = getMxeAccount(programId);
-    log(`MXE Account: ${mxeAccount.toBase58()}`);
+    logEntry("MXE Account", mxeAccount.toBase58(), icons.key);
 
     const keysSet = await checkMxeKeysSet(provider, programId);
     if (!keysSet) {
-      log("⚠️  MXE keys not set yet. DKG may still be in progress.");
-      log("   Computation definitions can be initialized, but computations won't work until DKG completes.");
+      logWarning("MXE keys not set yet. DKG may still be in progress.");
+      console.log(chalk.gray("   Computation definitions can be initialized, but computations won't work until DKG completes."));
     } else {
       logSuccess("MXE keys are set!");
     }
-
-
 
     // Circuit names
     const circuits = ["deposit", "withdraw", "borrow", "repay"];
     const computationDefinitions: Record<string, string> = {};
 
-    log("\nInitializing computation definitions...");
-    log("⚠️  Note: Computation definition initialization depends on your Arcium SDK version.");
-    log("   This script creates placeholder entries. Update with actual Arcium SDK calls.");
+    logSection("Initializing Definitions");
+    logInfo("Note: Computation definition initialization depends on your Arcium SDK version.");
+    console.log(chalk.gray("   This script creates placeholder entries. Update with actual Arcium SDK calls."));
 
     for (const circuitName of circuits) {
       try {
-        log(`\n📝 Processing circuit: ${circuitName}`);
+        logDivider();
+        logInfo(`Processing circuit: ${circuitName}`);
 
         // Derive computation definition PDA
-        // This is a placeholder - adjust based on your Arcium SDK
         const arciumProgram = getArciumProgramInstance(provider);
         const [compDefPda] = PublicKey.findProgramAddressSync(
           [
@@ -88,12 +98,13 @@ async function initializeComputationDefinitions() {
         const compDefAccount = await provider.connection.getAccountInfo(compDefPda);
         
         if (compDefAccount) {
-          log(`   ℹ️  ${circuitName} computation definition already exists`);
+          logEntry(circuitName, "Already exists", icons.checkmark);
+          logEntry("Address", compDefPda.toBase58());
           computationDefinitions[circuitName] = compDefPda.toBase58();
         } else {
-          log(`   ⚠️  ${circuitName} computation definition needs to be created`);
-          log(`      Expected address: ${compDefPda.toBase58()}`);
-          log(`      You may need to run: arcium computation-definition create --circuit ${circuitName}`);
+          logEntry(circuitName, "Needs creation", icons.warning);
+          logEntry("Expected Address", compDefPda.toBase58());
+          console.log(chalk.gray(`      You may need to run: arcium computation-definition create --circuit ${circuitName}`));
           computationDefinitions[circuitName] = compDefPda.toBase58();
         }
       } catch (error: any) {
@@ -108,11 +119,15 @@ async function initializeComputationDefinitions() {
       computationDefinitions,
     });
 
-    logSuccess("\n✅ All computation definitions initialized!");
-    log("\nComputation Definitions:");
+    logSection("Initialization Summary");
+    logSuccess("All computation definitions initialized!");
+    logDivider();
+    
     for (const [name, address] of Object.entries(computationDefinitions)) {
-      log(`  ${name}: ${address}`);
+      logEntry(name, address, icons.link);
     }
+    logDivider();
+
   } catch (error) {
     logError("Failed to initialize computation definitions", error);
     process.exit(1);

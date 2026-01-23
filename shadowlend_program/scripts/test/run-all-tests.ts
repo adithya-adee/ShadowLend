@@ -1,8 +1,20 @@
 import { Wallet } from "@coral-xyz/anchor";
 import { PublicKey } from "@solana/web3.js";
-import { createProvider, getNetworkConfig, log, logSuccess, logError } from "../utils/config";
+import chalk from "chalk";
+import { 
+  createProvider, 
+  getNetworkConfig, 
+  logHeader, 
+  logSection, 
+  logEntry, 
+  logSuccess, 
+  logError, 
+  logInfo, 
+  logDivider,
+  icons 
+} from "../utils/config";
 import { getWalletKeypair, loadDeployment } from "../utils/deployment";
-import { createArciumClient, checkMxeKeysSet } from "../utils/arcium";
+import { checkMxeKeysSet } from "../utils/arcium";
 
 /**
  * Run all tests in sequence
@@ -10,18 +22,18 @@ import { createArciumClient, checkMxeKeysSet } from "../utils/arcium";
 async function runAllTests() {
   try {
     const config = getNetworkConfig();
-    log(`\n${"=".repeat(60)}`);
-    log(`Running all tests on ${config.name}`);
-    log(`${"=".repeat(60)}\n`);
+    logHeader(`Run All Tests (${config.name})`);
 
     // Load wallet
     const walletKeypair = getWalletKeypair();
     const wallet = new Wallet(walletKeypair);
-    log(`Wallet: ${wallet.publicKey.toBase58()}\n`);
+    
+    logSection("Configuration");
+    logEntry("Network", config.name, icons.sparkle);
+    logEntry("Wallet", wallet.publicKey.toBase58(), icons.key);
 
     // Create provider
     const provider = createProvider(wallet, config);
-    const arciumClient = createArciumClient(provider);
 
     // Load deployment
     const deployment = loadDeployment();
@@ -29,9 +41,7 @@ async function runAllTests() {
       throw new Error("Deployment not found. Run setup scripts first.");
     }
 
-    // Pre-flight checks
-    log("🔍 Pre-flight Checks:");
-    log("-".repeat(60));
+    logSection("Pre-flight Checks");
 
     // Check program
     const programId = new PublicKey(deployment.programId);
@@ -39,7 +49,8 @@ async function runAllTests() {
     if (!programAccount) {
       throw new Error("Program not deployed");
     }
-    logSuccess(`✓ Program deployed: ${programId.toBase58()}`);
+    logEntry("Program", "Deployed", icons.checkmark);
+    logEntry("Program ID", programId.toBase58());
 
     // Check pool
     if (!deployment.poolAddress) {
@@ -50,24 +61,24 @@ async function runAllTests() {
     if (!poolAccount) {
       throw new Error("Pool account not found");
     }
-    logSuccess(`✓ Pool initialized: ${poolPda.toBase58()}`);
+    logEntry("Pool", "Initialized", icons.checkmark);
+    logEntry("Pool Address", poolPda.toBase58());
 
     // Check MXE
-    const keysSet = await checkMxeKeysSet(arciumClient);
+    const keysSet = await checkMxeKeysSet(provider, programId);
     if (!keysSet) {
       throw new Error("MXE keys not set. DKG not complete.");
     }
-    logSuccess(`✓ MXE operational`);
+    logEntry("MXE Status", "Operational", icons.checkmark);
 
     // Check computation definitions
     if (!deployment.computationDefinitions) {
       throw new Error("Computation definitions not initialized");
     }
-    logSuccess(`✓ Computation definitions initialized`);
+    logEntry("Comp Defs", "Initialized", icons.checkmark);
 
-    log("\n" + "=".repeat(60));
-    log("All pre-flight checks passed!");
-    log("=".repeat(60) + "\n");
+    logDivider();
+    logSuccess("All pre-flight checks passed!");
 
     // Test sequence
     const tests = [
@@ -77,19 +88,21 @@ async function runAllTests() {
       { name: "Repay", file: "./test-repay" },
     ];
 
-    log("📋 Test Sequence:");
+    logSection("Test Plan");
     for (const test of tests) {
-      log(`   ${test.name}`);
+      logEntry(test.name, "Pending", icons.clock);
     }
-    log("");
+    logDivider();
 
-    log("⚠️  Individual test execution pending");
-    log("   Run each test separately:");
+    logInfo("Note: Individual test orchestration is not yet fully automated in this script.");
+    console.log(chalk.gray("   Please run each test separately for now:"));
     for (const test of tests) {
-      log(`   - npm run test:${test.name.toLowerCase()}`);
+      console.log(chalk.cyan(`   npm run test:${test.name.toLowerCase()}`));
     }
 
-    logSuccess("\n✅ Test framework validated");
+    logDivider();
+    logSuccess("Test framework validated");
+
   } catch (error) {
     logError("Test suite failed", error);
     process.exit(1);

@@ -1,7 +1,21 @@
 import { Wallet, BN, Program } from "@coral-xyz/anchor";
 import { PublicKey, Keypair, SystemProgram, SYSVAR_INSTRUCTIONS_PUBKEY } from "@solana/web3.js";
 import { TOKEN_PROGRAM_ID, getAssociatedTokenAddress, createAssociatedTokenAccountInstruction, getAccount } from "@solana/spl-token";
-import { createProvider, getNetworkConfig, loadProgram, log, logSuccess, logError } from "../utils/config";
+import chalk from "chalk";
+import { 
+  createProvider, 
+  getNetworkConfig, 
+  loadProgram, 
+  logHeader, 
+  logSection, 
+  logEntry, 
+  logSuccess, 
+  logError, 
+  logInfo, 
+  logWarning, 
+  logDivider, 
+  icons 
+} from "../utils/config";
 import { getWalletKeypair, loadDeployment } from "../utils/deployment";
 import { getMxeAccount, getArciumProgramInstance, generateComputationOffset, waitForComputationFinalization } from "../utils/arcium";
 import * as idl from "../../target/idl/shadowlend_program.json";
@@ -14,12 +28,15 @@ const ARCIUM_PROGRAM_ID = new PublicKey("Arcj82pX7HxYKLR92qvgZUAd7vGS1k4hQvAFcPA
 async function testDeposit() {
   try {
     const config = getNetworkConfig();
-    log(`Testing deposit on ${config.name}...`);
+    logHeader("Test: Deposit Instruction");
 
     // Load wallet
     const walletKeypair = getWalletKeypair();
     const wallet = new Wallet(walletKeypair);
-    log(`Using wallet: ${wallet.publicKey.toBase58()}`);
+    
+    logSection("Configuration");
+    logEntry("Network", config.name, icons.sparkle);
+    logEntry("Wallet", wallet.publicKey.toBase58(), icons.key);
 
     // Create provider
     const provider = createProvider(wallet, config);
@@ -38,9 +55,9 @@ async function testDeposit() {
     const poolPda = new PublicKey(deployment.poolAddress);
     const collateralMint = new PublicKey(deployment.collateralMint);
 
-    log(`Program ID: ${programId.toBase58()}`);
-    log(`Pool: ${poolPda.toBase58()}`);
-    log(`Collateral Mint: ${collateralMint.toBase58()}`);
+    logEntry("Program ID", programId.toBase58(), icons.folder);
+    logEntry("Pool", poolPda.toBase58(), icons.link);
+    logEntry("Collateral Mint", collateralMint.toBase58(), icons.key);
 
     // Load program
     const program = await loadProgram(provider, programId, idl) as Program;
@@ -65,8 +82,9 @@ async function testDeposit() {
       programId
     );
 
-    log(`User Obligation: ${userObligation.toBase58()}`);
-    log(`Collateral Vault: ${collateralVault.toBase58()}`);
+    logSection("Account Derivation");
+    logEntry("User Obligation", userObligation.toBase58(), icons.link);
+    logEntry("Collateral Vault", collateralVault.toBase58(), icons.link);
 
     // Get or create user token account
     const userTokenAccount = await getAssociatedTokenAddress(
@@ -74,23 +92,23 @@ async function testDeposit() {
       wallet.publicKey
     );
 
-    log(`User Token Account: ${userTokenAccount.toBase58()}`);
+    logEntry("User Token Account", userTokenAccount.toBase58(), icons.key);
 
     // Check if user has tokens
     try {
       const tokenAccountInfo = await getAccount(provider.connection, userTokenAccount);
-      log(`User token balance: ${tokenAccountInfo.amount.toString()}`);
+      logEntry("Token Balance", tokenAccountInfo.amount.toString(), icons.info);
       
       if (tokenAccountInfo.amount === 0n) {
         logError("User has no tokens to deposit. Please fund the token account first.");
-        log(`\nTo fund your account with devnet USDC, you can:`);
-        log(`1. Use a devnet faucet`);
-        log(`2. Or use: spl-token mint ${collateralMint.toBase58()} 1000000 ${userTokenAccount.toBase58()}`);
+        console.log(chalk.gray(`   To fund your account with devnet USDC:`));
+        console.log(chalk.gray(`   1. Use a devnet faucet`));
+        console.log(chalk.gray(`   2. Or use: spl-token mint ${collateralMint.toBase58()} 1000000 ${userTokenAccount.toBase58()}`));
         process.exit(1);
       }
     } catch (error: any) {
       if (error.message?.includes("could not find account")) {
-        logError("User token account does not exist. Creating it...");
+        logWarning("User token account does not exist. Creating it...");
         
         // Create associated token account
         const createAtaIx = createAssociatedTokenAccountInstruction(
@@ -122,16 +140,16 @@ async function testDeposit() {
     // Convert to BN for proper serialization (u128 in Rust)
     const userNonce = new BN(Date.now()).mul(new BN(1000000));
 
-    log(`\n📝 Deposit Parameters:`);
-    log(`   Amount: ${depositAmount.toString()}`);
-    log(`   Computation Offset: ${computationOffset.toString()}`);
-    log(`   User Nonce: ${userNonce.toString()}`);
+    logSection("Deposit Parameters");
+    logEntry("Amount", depositAmount.toString(), icons.arrow);
+    logEntry("Computation Offset", computationOffset.toString(), icons.clock);
+    logEntry("User Nonce", userNonce.toString(), icons.key);
 
     // Get MXE and Arcium accounts
     const mxeAccount = getMxeAccount(programId);
     const arciumProgram = getArciumProgramInstance(provider);
     
-    log(`   MXE Account: ${mxeAccount.toBase58()}`);
+    logEntry("MXE Account", mxeAccount.toBase58(), icons.key);
 
     // Derive Arcium-related accounts
     const [mempoolAccount] = PublicKey.findProgramAddressSync(
@@ -171,7 +189,9 @@ async function testDeposit() {
     const poolAccount = new PublicKey("G2sRWJvi3xoyh5k2gY49eG9L8YhAEWQPtNb1zb1GXTtC");
     const clockAccount = new PublicKey("7EbMUTLo5DjdzbN7s8BXeZwXzEwNQb1hScfRvWg8a6ot");
 
-    log(`\n🔄 Executing deposit transaction...`);
+    logDivider();
+    logInfo("Executing deposit transaction...");
+    logInfo("This sends the request to Arcium nodes...");
 
     // Execute deposit instruction
     try {
@@ -203,15 +223,18 @@ async function testDeposit() {
         })
         .rpc();
 
-      log(`Transaction signature: ${tx}`);
-      logSuccess("Deposit transaction submitted!");
+      logSuccess("Transaction submitted!");
+      logEntry("Signature", tx, icons.rocket);
 
       // Wait for confirmation
       await provider.connection.confirmTransaction(tx, "confirmed");
-      logSuccess("Transaction confirmed!");
+      logSuccess("Transaction confirmed on-chain");
 
       // Wait for MPC computation to finalize
-      log(`\n⏳ Waiting for MPC computation to finalize...`);
+      logDivider();
+      logInfo("Waiting for MPC computation to finalize...");
+      console.log(chalk.gray("   This happens off-chain on the Arcium network."));
+      
       await waitForComputationFinalization(
         provider,
         computationOffset,
@@ -220,27 +243,27 @@ async function testDeposit() {
         3000    // Poll every 3 seconds
       );
 
-      logSuccess("\n✅ Deposit completed successfully!");
+      logSuccess("Deposit completed successfully!");
       
       // Fetch and display user obligation state
-      log(`\n📊 Fetching user obligation state...`);
+      logSection("Final State");
       try {
         const obligationAccount = await (program.account as any).userObligation.fetch(userObligation);
-        log(`User Obligation:`);
-        log(`   User: ${obligationAccount.user.toBase58()}`);
-        log(`   Pool: ${obligationAccount.pool.toBase58()}`);
-        log(`   Encrypted Collateral: ${Buffer.from(obligationAccount.encryptedCollateral as any).toString('hex').substring(0, 32)}...`);
-        log(`   Encrypted Debt: ${Buffer.from(obligationAccount.encryptedDebt as any).toString('hex').substring(0, 32)}...`);
+        logEntry("User", obligationAccount.user.toBase58(), icons.key);
+        logEntry("Pool", obligationAccount.pool.toBase58(), icons.link);
+        logEntry("Encrypted Collateral", Buffer.from(obligationAccount.encryptedCollateral as any).toString('hex').substring(0, 32) + "...", icons.key);
+        logEntry("Encrypted Debt", Buffer.from(obligationAccount.encryptedDebt as any).toString('hex').substring(0, 32) + "...", icons.key);
       } catch (error) {
-        log(`   Could not fetch obligation account (may not exist yet)`);
+        logWarning("Could not fetch obligation account (may not exist yet)");
       }
+      logDivider();
 
     } catch (error: any) {
       logError("Deposit transaction failed", error);
       
       if (error.logs) {
-        log("\n📋 Transaction Logs:");
-        error.logs.forEach((logLine: string) => log(`   ${logLine}`));
+        logSection("Transaction Logs");
+        error.logs.forEach((logLine: string) => Math.random() > 0 ? console.log(chalk.gray(`   ${logLine}`)) : null);
       }
       
       throw error;

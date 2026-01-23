@@ -4,9 +4,14 @@ import {
   createProvider,
   getNetworkConfig,
   loadProgram,
-  log,
+  logHeader,
+  logSection,
+  logEntry,
   logSuccess,
   logError,
+  logInfo,
+  logDivider,
+  icons
 } from "../utils/config";
 import {
   getWalletKeypair,
@@ -21,12 +26,15 @@ import * as idl from "../../target/idl/shadowlend_program.json";
 async function initializePool() {
   try {
     const config = getNetworkConfig();
-    log(`Initializing pool on ${config.name}...`);
+    logHeader("Initialize Lending Pool");
 
     // Load wallet
     const walletKeypair = getWalletKeypair();
     const wallet = new Wallet(walletKeypair);
-    log(`Using wallet: ${wallet.publicKey.toBase58()}`);
+
+    logSection("Configuration");
+    logEntry("Network", config.name, icons.sparkle);
+    logEntry("Wallet", wallet.publicKey.toBase58(), icons.key);
 
     // Create provider and load program
     const provider = createProvider(wallet, config);
@@ -37,6 +45,10 @@ async function initializePool() {
     }
 
     const programId = new PublicKey(deployment.programId);
+    
+    logSection("Program Details");
+    logEntry("Program ID", programId.toBase58(), icons.folder);
+
     const program = await loadProgram(provider, programId, idl);
 
     // Derive pool PDA
@@ -45,20 +57,24 @@ async function initializePool() {
       programId
     );
 
-    log(`Pool PDA: ${poolPda.toBase58()}`);
+    logEntry("Pool PDA", poolPda.toBase58(), icons.link);
 
     // Pool configuration
     const ltvBps = 7500; // 75% LTV
     const liquidationThreshold = 8000; // 80% liquidation threshold
 
     // Token mints - using common devnet tokens
-    // For production, these should be configurable
     const collateralMint = new PublicKey("4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"); // USDC devnet
     const borrowMint = new PublicKey("So11111111111111111111111111111111111111112"); // Wrapped SOL
 
-    log(`Collateral Mint (USDC): ${collateralMint.toBase58()}`);
-    log(`Borrow Mint (SOL): ${borrowMint.toBase58()}`);
-    log(`Initializing pool with LTV: ${ltvBps / 100}%, Liquidation: ${liquidationThreshold / 100}%`);
+    logSection("Pool Parameters");
+    logEntry("Collateral Mint (USDC)", collateralMint.toBase58(), icons.key);
+    logEntry("Borrow Mint (SOL)", borrowMint.toBase58(), icons.key);
+    logEntry("LTV", `${ltvBps / 100}%`, icons.info);
+    logEntry("Liquidation Threshold", `${liquidationThreshold / 100}%`, icons.warning);
+
+    logDivider();
+    logInfo("Initializing pool...");
 
     // Initialize pool
     const tx = await program.methods
@@ -72,7 +88,9 @@ async function initializePool() {
       })
       .rpc();
 
-    log(`Transaction signature: ${tx}`);
+    logSuccess("Pool initialized successfully!");
+    logEntry("Transaction", tx, icons.rocket);
+    
     await provider.connection.confirmTransaction(tx, "confirmed");
 
     // Update deployment state
@@ -82,10 +100,10 @@ async function initializePool() {
       borrowMint: borrowMint.toBase58(),
     });
 
-    logSuccess("Pool initialized successfully!");
-    log(`Pool: ${poolPda.toBase58()}`);
-    log(`Collateral Mint: ${collateralMint.toBase58()}`);
-    log(`Borrow Mint: ${borrowMint.toBase58()}`);
+    logSection("Deployment Updated");
+    logEntry("Pool Address", poolPda.toBase58(), icons.checkmark);
+    logDivider();
+
   } catch (error) {
     logError("Failed to initialize pool", error);
     process.exit(1);

@@ -1,6 +1,18 @@
 import { Wallet } from "@coral-xyz/anchor";
 import { PublicKey } from "@solana/web3.js";
-import { createProvider, getNetworkConfig, log, logSuccess, logError } from "../utils/config";
+import { 
+  createProvider, 
+  getNetworkConfig, 
+  logHeader, 
+  logSection, 
+  logEntry, 
+  logSuccess, 
+  logError, 
+  logInfo, 
+  logWarning, 
+  logDivider,
+  icons 
+} from "../utils/config";
 import { getWalletKeypair, loadDeployment } from "../utils/deployment";
 import { getMxeAccount } from "../utils/arcium";
 
@@ -10,12 +22,15 @@ import { getMxeAccount } from "../utils/arcium";
 async function testWithdraw() {
   try {
     const config = getNetworkConfig();
-    log(`Testing withdraw on ${config.name}...`);
+    logHeader("Test: Withdraw Instruction");
 
     // Load wallet
     const walletKeypair = getWalletKeypair();
     const wallet = new Wallet(walletKeypair);
-    log(`Using wallet: ${wallet.publicKey.toBase58()}`);
+    
+    logSection("Configuration");
+    logEntry("Network", config.name, icons.sparkle);
+    logEntry("Wallet", wallet.publicKey.toBase58(), icons.key);
 
     // Create provider
     const provider = createProvider(wallet, config);
@@ -29,8 +44,8 @@ async function testWithdraw() {
     const programId = new PublicKey(deployment.programId);
     const poolPda = new PublicKey(deployment.poolAddress);
 
-    log(`Program ID: ${programId.toBase58()}`);
-    log(`Pool: ${poolPda.toBase58()}`);
+    logEntry("Program ID", programId.toBase58(), icons.folder);
+    logEntry("Pool", poolPda.toBase58(), icons.link);
 
     // Derive user obligation PDA
     const [userObligation] = PublicKey.findProgramAddressSync(
@@ -42,7 +57,7 @@ async function testWithdraw() {
       programId
     );
 
-    log(`User Obligation: ${userObligation.toBase58()}`);
+    logEntry("User Obligation", userObligation.toBase58(), icons.link);
 
     // Check if user has collateral
     const obligationAccount = await provider.connection.getAccountInfo(userObligation);
@@ -55,24 +70,27 @@ async function testWithdraw() {
     const withdrawAmount = 200_000; // 0.2 token (assuming 6 decimals)
     const computationOffset = BigInt(Date.now());
 
-    log(`\n📝 Withdraw Parameters:`);
-    log(`   Amount: ${withdrawAmount}`);
-    log(`   Computation Offset: ${computationOffset}`);
+    logSection("Withdraw Parameters");
+    logEntry("Amount", withdrawAmount.toString(), icons.arrow);
+    logEntry("Computation Offset", computationOffset.toString(), icons.clock);
 
     // Get MXE account
     const mxeAccount = getMxeAccount(programId);
-    log(`   MXE Account: ${mxeAccount.toBase58()}`);
+    logEntry("MXE Account", mxeAccount.toBase58(), icons.key);
 
-    log("\n⚠️  Withdraw test implementation pending");
-    log("   Required steps:");
-    log("   1. Verify user has sufficient collateral");
-    log("   2. Call withdraw instruction");
-    log("   3. Wait for MPC health check");
-    log("   4. Verify approval/rejection");
-    log("   5. Check token transfer (if approved)");
-    log("   6. Verify health factor maintained");
+    logDivider();
+    logWarning("Withdraw test execution pending implementation");
+    logInfo("Required Steps:");
+    console.log("   1. Verify user has sufficient collateral");
+    console.log("   2. Call withdraw instruction");
+    console.log("   3. Wait for MPC health check");
+    console.log("   4. Verify approval/rejection");
+    console.log("   5. Check token transfer (if approved)");
+    console.log("   6. Verify health factor maintained");
 
-    logSuccess("\n✅ Withdraw test structure validated");
+    logDivider();
+    logSuccess("Withdraw test structure validated");
+
   } catch (error) {
     logError("Withdraw test failed", error);
     process.exit(1);

@@ -1,8 +1,20 @@
 import { Wallet } from "@coral-xyz/anchor";
 import { PublicKey } from "@solana/web3.js";
-import { createProvider, getNetworkConfig, log, logSuccess, logError } from "../utils/config";
+import { 
+  createProvider, 
+  getNetworkConfig, 
+  logHeader, 
+  logSection, 
+  logEntry, 
+  logSuccess, 
+  logError, 
+  logInfo, 
+  logWarning, 
+  logDivider,
+  icons 
+} from "../utils/config";
 import { getWalletKeypair, loadDeployment } from "../utils/deployment";
-import { createArciumClient } from "../utils/arcium";
+import { getMxeAccount } from "../utils/arcium";
 
 /**
  * Test borrow instruction
@@ -10,16 +22,18 @@ import { createArciumClient } from "../utils/arcium";
 async function testBorrow() {
   try {
     const config = getNetworkConfig();
-    log(`Testing borrow on ${config.name}...`);
+    logHeader("Test: Borrow Instruction");
 
     // Load wallet
     const walletKeypair = getWalletKeypair();
     const wallet = new Wallet(walletKeypair);
-    log(`Using wallet: ${wallet.publicKey.toBase58()}`);
+    
+    logSection("Configuration");
+    logEntry("Network", config.name, icons.sparkle);
+    logEntry("Wallet", wallet.publicKey.toBase58(), icons.key);
 
     // Create provider
     const provider = createProvider(wallet, config);
-    const arciumClient = createArciumClient(provider);
 
     // Load deployment
     const deployment = loadDeployment();
@@ -30,8 +44,8 @@ async function testBorrow() {
     const programId = new PublicKey(deployment.programId);
     const poolPda = new PublicKey(deployment.poolAddress);
 
-    log(`Program ID: ${programId.toBase58()}`);
-    log(`Pool: ${poolPda.toBase58()}`);
+    logEntry("Program ID", programId.toBase58(), icons.folder);
+    logEntry("Pool", poolPda.toBase58(), icons.link);
 
     // Derive user obligation PDA
     const [userObligation] = PublicKey.findProgramAddressSync(
@@ -43,7 +57,7 @@ async function testBorrow() {
       programId
     );
 
-    log(`User Obligation: ${userObligation.toBase58()}`);
+    logEntry("User Obligation", userObligation.toBase58(), icons.link);
 
     // Check if user has deposited collateral
     const obligationAccount = await provider.connection.getAccountInfo(userObligation);
@@ -56,23 +70,26 @@ async function testBorrow() {
     const borrowAmount = 500_000; // 0.5 token (assuming 6 decimals)
     const computationOffset = BigInt(Date.now());
 
-    log(`\n📝 Borrow Parameters:`);
-    log(`   Amount: ${borrowAmount}`);
-    log(`   Computation Offset: ${computationOffset}`);
+    logSection("Borrow Parameters");
+    logEntry("Amount", borrowAmount.toString(), icons.arrow);
+    logEntry("Computation Offset", computationOffset.toString(), icons.clock);
 
     // Get MXE account
-    const mxeAccount = await arciumClient.getMxeAccount();
-    log(`   MXE Account: ${mxeAccount.toBase58()}`);
+    const mxeAccount = getMxeAccount(programId);
+    logEntry("MXE Account", mxeAccount.toBase58(), icons.key);
 
-    log("\n⚠️  Borrow test implementation pending");
-    log("   Required steps:");
-    log("   1. Verify user has sufficient collateral");
-    log("   2. Call borrow instruction");
-    log("   3. Wait for MPC health check");
-    log("   4. Verify approval/rejection");
-    log("   5. Check token transfer (if approved)");
+    logDivider();
+    logWarning("Borrow test execution pending implementation");
+    logInfo("Required Steps:");
+    console.log("   1. Verify user has sufficient collateral");
+    console.log("   2. Call borrow instruction");
+    console.log("   3. Wait for MPC health check");
+    console.log("   4. Verify approval/rejection");
+    console.log("   5. Check token transfer");
 
-    logSuccess("\n✅ Borrow test structure validated");
+    logDivider();
+    logSuccess("Borrow test structure validated");
+
   } catch (error) {
     logError("Borrow test failed", error);
     process.exit(1);

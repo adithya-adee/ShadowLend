@@ -1,8 +1,20 @@
 import { Wallet } from "@coral-xyz/anchor";
 import { PublicKey } from "@solana/web3.js";
-import { createProvider, getNetworkConfig, log, logSuccess, logError } from "../utils/config";
+import { 
+  createProvider, 
+  getNetworkConfig, 
+  logHeader, 
+  logSection, 
+  logEntry, 
+  logSuccess, 
+  logError, 
+  logInfo, 
+  logWarning, 
+  logDivider,
+  icons 
+} from "../utils/config";
 import { getWalletKeypair, loadDeployment } from "../utils/deployment";
-import { createArciumClient } from "../utils/arcium";
+import { getMxeAccount } from "../utils/arcium";
 
 /**
  * Test repay instruction
@@ -10,16 +22,18 @@ import { createArciumClient } from "../utils/arcium";
 async function testRepay() {
   try {
     const config = getNetworkConfig();
-    log(`Testing repay on ${config.name}...`);
+    logHeader("Test: Repay Instruction");
 
     // Load wallet
     const walletKeypair = getWalletKeypair();
     const wallet = new Wallet(walletKeypair);
-    log(`Using wallet: ${wallet.publicKey.toBase58()}`);
+    
+    logSection("Configuration");
+    logEntry("Network", config.name, icons.sparkle);
+    logEntry("Wallet", wallet.publicKey.toBase58(), icons.key);
 
     // Create provider
     const provider = createProvider(wallet, config);
-    const arciumClient = createArciumClient(provider);
 
     // Load deployment
     const deployment = loadDeployment();
@@ -30,8 +44,8 @@ async function testRepay() {
     const programId = new PublicKey(deployment.programId);
     const poolPda = new PublicKey(deployment.poolAddress);
 
-    log(`Program ID: ${programId.toBase58()}`);
-    log(`Pool: ${poolPda.toBase58()}`);
+    logEntry("Program ID", programId.toBase58(), icons.folder);
+    logEntry("Pool", poolPda.toBase58(), icons.link);
 
     // Derive user obligation PDA
     const [userObligation] = PublicKey.findProgramAddressSync(
@@ -43,7 +57,7 @@ async function testRepay() {
       programId
     );
 
-    log(`User Obligation: ${userObligation.toBase58()}`);
+    logEntry("User Obligation", userObligation.toBase58(), icons.link);
 
     // Check if user has debt
     const obligationAccount = await provider.connection.getAccountInfo(userObligation);
@@ -56,24 +70,27 @@ async function testRepay() {
     const repayAmount = 100_000; // 0.1 token (assuming 6 decimals)
     const computationOffset = BigInt(Date.now());
 
-    log(`\n📝 Repay Parameters:`);
-    log(`   Amount: ${repayAmount}`);
-    log(`   Computation Offset: ${computationOffset}`);
+    logSection("Repay Parameters");
+    logEntry("Amount", repayAmount.toString(), icons.arrow);
+    logEntry("Computation Offset", computationOffset.toString(), icons.clock);
 
     // Get MXE account
-    const mxeAccount = await arciumClient.getMxeAccount();
-    log(`   MXE Account: ${mxeAccount.toBase58()}`);
+    const mxeAccount = getMxeAccount(programId);
+    logEntry("MXE Account", mxeAccount.toBase58(), icons.key);
 
-    log("\n⚠️  Repay test implementation pending");
-    log("   Required steps:");
-    log("   1. Verify user has debt to repay");
-    log("   2. Ensure user has tokens for repayment");
-    log("   3. Call repay instruction");
-    log("   4. Wait for MPC computation");
-    log("   5. Verify debt reduction");
-    log("   6. Check token transfer to borrow vault");
+    logDivider();
+    logWarning("Repay test execution pending implementation");
+    logInfo("Required Steps:");
+    console.log("   1. Verify user has debt to repay");
+    console.log("   2. Ensure user has tokens for repayment");
+    console.log("   3. Call repay instruction");
+    console.log("   4. Wait for MPC computation");
+    console.log("   5. Verify debt reduction");
+    console.log("   6. Check token transfer to borrow vault");
 
-    logSuccess("\n✅ Repay test structure validated");
+    logDivider();
+    logSuccess("Repay test structure validated");
+
   } catch (error) {
     logError("Repay test failed", error);
     process.exit(1);

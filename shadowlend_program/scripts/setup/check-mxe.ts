@@ -3,9 +3,14 @@ import { PublicKey } from "@solana/web3.js";
 import {
   createProvider,
   getNetworkConfig,
-  log,
+  logHeader,
+  logSection,
+  logEntry,
   logSuccess,
   logError,
+  logInfo,
+  logDivider,
+  icons
 } from "../utils/config";
 import {
   getMxeAccount,
@@ -20,12 +25,16 @@ import { getWalletKeypair, loadDeployment } from "../utils/deployment";
 async function checkMxe() {
   try {
     const config = getNetworkConfig();
-    log(`Checking MXE status on ${config.name}...`);
-    log(`Cluster offset: ${config.arciumClusterOffset}\n`);
+    logHeader("MXE Status Check");
 
     // Load wallet
     const walletKeypair = getWalletKeypair();
     const wallet = new Wallet(walletKeypair);
+
+    logSection("Configuration");
+    logEntry("Network", config.name, icons.sparkle);
+    logEntry("Cluster Offset", config.arciumClusterOffset.toString(), icons.info);
+    logEntry("Wallet", wallet.publicKey.toBase58(), icons.key);
 
     // Create provider
     const provider = createProvider(wallet, config);
@@ -37,62 +46,69 @@ async function checkMxe() {
     }
     
     const programId = new PublicKey(deployment.programId);
+    logEntry("Program ID", programId.toBase58(), icons.folder);
 
     // Check MXE initialization
-    log("🔍 Checking MXE initialization...");
+    logSection("Initialization Status");
+    logInfo("Checking MXE initialization...");
     const mxeInitialized = await checkMxeInitialized(provider, programId);
 
     if (!mxeInitialized) {
       logError("MXE is NOT initialized");
-      log("\n💡 To initialize MXE:");
-      log("   1. Ensure Arcium network is running");
-      log("   2. Run: arcium mxe initialize");
+      logDivider();
+      logInfo(" To initialize MXE:");
+      console.log("     1. Ensure Arcium network is running");
+      console.log("     2. Run: arcium mxe initialize");
       process.exit(1);
     }
 
     const mxeAccount = getMxeAccount(programId);
     logSuccess("MXE is initialized");
-    log(`   MXE Account: ${mxeAccount.toBase58()}`);
+    logEntry("MXE Account", mxeAccount.toBase58(), icons.key);
 
     // Check MXE keys (DKG status)
-    log("\n🔍 Checking MXE keys (DKG status)...");
+    logSection("Key Generation (DKG) Status");
+    logInfo("Checking MXE keys...");
     const keysSet = await checkMxeKeysSet(provider, programId);
 
     if (!keysSet) {
       logError("MXE keys are NOT set (DKG not complete)");
-      log("\n⏳ DKG (Distributed Key Generation) is still in progress or failed.");
-      log("   This means:");
-      log("   - MPC computations will NOT work yet");
-      log("   - You need to wait for DKG to complete");
-      log("\n💡 To check DKG status:");
-      log("   - Wait a few minutes and run this script again");
-      log("   - Check Arcium cluster logs for DKG progress");
+      logDivider();
+      logInfo(" DKG is still in progress or failed.");
+      console.log("     This means MPC computations will NOT work yet.");
+      logDivider();
+      logInfo(" To fix:");
+      console.log("     - Wait a few minutes and run this script again");
+      console.log("     - Check Arcium cluster logs");
       process.exit(1);
     }
 
     logSuccess("MXE keys are set (DKG complete)");
 
     // Display MXE details
-    log("\n📊 MXE Details:");
-    log(`   Cluster Offset: ${config.arciumClusterOffset}`);
-    log(`   MXE Account: ${mxeAccount.toBase58()}`);
-    log(`   Program ID: ${programId.toBase58()}`);
+    logSection("MXE Details Summary");
+    logEntry("Cluster Offset", config.arciumClusterOffset.toString(), icons.info);
+    logEntry("MXE Account", mxeAccount.toBase58(), icons.key);
+    logEntry("Program ID", programId.toBase58(), icons.folder);
     
     // Fetch account data to show size
     try {
       const accountInfo = await provider.connection.getAccountInfo(mxeAccount);
       if (accountInfo) {
-        log(`   Account Data Size: ${accountInfo.data.length} bytes`);
+        logEntry("Account Data Size", `${accountInfo.data.length} bytes`, icons.folder);
       }
     } catch (error) {
-      log("   Could not fetch account details");
+       // Ignore
     }
 
-    logSuccess("\n✅ MXE is fully operational!");
-    log("   You can now:");
-    log("   - Initialize computation definitions");
-    log("   - Run MPC computations");
-    log("   - Execute confidential transactions");
+    logDivider();
+    logSuccess("MXE is fully operational!");
+    logInfo("Next Steps:");
+    console.log("   - Initialize computation definitions");
+    console.log("   - Run MPC computations");
+    console.log("   - Execute confidential transactions");
+    logDivider();
+
   } catch (error) {
     logError("Failed to check MXE status", error);
     process.exit(1);

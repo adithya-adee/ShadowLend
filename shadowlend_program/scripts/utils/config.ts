@@ -98,67 +98,89 @@ export async function confirmTransaction(
 }
 
 /**
- * Format SOL amount for display
+ * Logging Utilities
  */
-export function formatSOL(lamports: number): string {
-  return (lamports / 1e9).toFixed(4);
+export const icons = {
+  rocket: "🚀",
+  key: "🔑",
+  link: "🔗",
+  folder: "📁",
+  checkmark: "✔",
+  cross: "✖",
+  arrow: "→",
+  dot: "•",
+  sparkle: "✨",
+  warning: "⚠",
+  info: "🛈",
+  clock: "⏱",
+};
+
+export function logHeader(title: string): void {
+  console.log();
+  console.log(
+    chalk.magentaBright(`  ${icons.sparkle} `) +
+      chalk.bold.white(title)
+  );
+  console.log(chalk.gray(`  ${"─".repeat(45)}`));
+  console.log();
 }
 
-/**
- * Log with timestamp and color
- */
-export function log(message: string, ...args: any[]): void {
-  const timestamp = new Date().toISOString();
-  console.log(chalk.gray(`[${timestamp}]`), message, ...args);
+export function logSection(title: string): void {
+  console.log();
+  console.log(chalk.cyan.bold(`  ${icons.dot} ${title}`));
+  console.log(chalk.gray(`  ${"─".repeat(45)}`));
 }
 
-/**
- * Log info message with blue color
- */
-export function logInfo(message: string, ...args: any[]): void {
-  const timestamp = new Date().toISOString();
-  console.log(chalk.gray(`[${timestamp}]`), chalk.blue(`ℹ ${message}`), ...args);
+export function logEntry(label: string, value: string, icon?: string): void {
+  const iconStr = icon !== undefined ? `${icon} ` : "   ";
+  console.log(
+    chalk.gray(`  ${iconStr}`) +
+      chalk.white(`${label}: `) +
+      chalk.yellowBright(value)
+  );
 }
 
-/**
- * Log warning with yellow color
- */
-export function logWarning(message: string, ...args: any[]): void {
-  const timestamp = new Date().toISOString();
-  console.log(chalk.gray(`[${timestamp}]`), chalk.yellow(`⚠️  ${message}`), ...args);
+export function logSuccess(message: string): void {
+  console.log();
+  console.log(
+    chalk.greenBright(`  ${icons.checkmark} `) + chalk.green.bold(message)
+  );
 }
 
-/**
- * Log error with red color and timestamp
- */
 export function logError(message: string, error?: any): void {
-  const timestamp = new Date().toISOString();
-  console.error(chalk.gray(`[${timestamp}]`), chalk.red(`❌ ${message}`));
+  console.log();
+  console.error(chalk.redBright(`  ${icons.cross} `) + chalk.red.bold(message));
+  
   if (error) {
-    console.error(chalk.red(error));
+    if (error instanceof Error) {
+        console.log(chalk.gray(`    ${error.message}`));
+        if (error.stack) {
+            console.log(chalk.gray(error.stack));
+        }
+    } else {
+        console.log(chalk.gray(`    ${String(error)}`));
+    }
   }
 }
 
-/**
- * Log success with green color and timestamp
- */
-export function logSuccess(message: string): void {
-  const timestamp = new Date().toISOString();
-  console.log(chalk.gray(`[${timestamp}]`), chalk.green(`✅ ${message}`));
+export function logWarning(message: string): void {
+  console.log(
+    chalk.yellowBright(`  ${icons.warning} `) + chalk.yellow(message)
+  );
 }
 
-/**
- * Log step/section header with cyan color
- */
-export function logHeader(message: string): void {
-  console.log(chalk.cyan.bold(`\n${'='.repeat(60)}`));
-  console.log(chalk.cyan.bold(`  ${message}`));
-  console.log(chalk.cyan.bold(`${'='.repeat(60)}\n`));
+export function logInfo(message: string): void {
+  console.log(chalk.blueBright(`  ${icons.info} `) + chalk.blue(message));
 }
 
-/**
- * Log data field with label
- */
+export function logDivider(): void {
+  console.log();
+}
+
+// Legacy support (to be deprecated or mapped)
+export function log(message: string, ...args: any[]): void {
+   console.log(chalk.gray(`  ${message}`), ...args);
+}
 export function logField(label: string, value: string): void {
-  console.log(chalk.gray(`   ${label}:`), chalk.white(value));
+    logEntry(label, value);
 }

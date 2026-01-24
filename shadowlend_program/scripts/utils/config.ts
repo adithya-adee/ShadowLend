@@ -1,3 +1,6 @@
+import * as dotenv from "dotenv";
+dotenv.config();
+
 import { Connection, PublicKey } from "@solana/web3.js";
 import { AnchorProvider, Program, Wallet } from "@coral-xyz/anchor";
 import chalk from "chalk";
@@ -22,7 +25,7 @@ export const NETWORKS: Record<string, NetworkConfig> = {
   },
   devnet: {
     name: "devnet",
-    rpcUrl: "https://api.devnet.solana.com",
+    rpcUrl: process.env.RPC_URL || "https://api.devnet.solana.com",
     arciumClusterOffset: 456, // Current devnet cluster offset
   },
 };

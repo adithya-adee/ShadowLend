@@ -18,10 +18,10 @@ import {
 } from "../utils/config";
 import { getWalletKeypair, loadDeployment } from "../utils/deployment";
 import { getMxeAccount, getArciumProgramInstance, generateComputationOffset, waitForComputationFinalization } from "../utils/arcium";
-import { getCompDefAccOffset, getCompDefAccAddress, getClusterAccAddress, getComputationAccAddress, getExecutingPoolAccAddress, getMempoolAccAddress } from "@arcium-hq/client";
+import { getCompDefAccOffset, getCompDefAccAddress, getClusterAccAddress, getComputationAccAddress, getExecutingPoolAccAddress, getMempoolAccAddress, getFeePoolAccAddress, getClockAccAddress, getArciumProgramId, awaitComputationFinalization } from "@arcium-hq/client";
 import * as idl from "../../target/idl/shadowlend_program.json";
 
-const ARCIUM_PROGRAM_ID = new PublicKey("Arcj82pX7HxYKLR92qvgZUAd7vGS1k4hQvAFcPATFdEQ");
+
 
 /**
  * Test deposit instruction
@@ -167,10 +167,12 @@ async function testDeposit() {
       compDefOffset,
     );
 
-    const clusterAccount = getClusterAccAddress(config.arciumClusterOffset)
+    const clusterAccount = getClusterAccAddress(config.arciumClusterOffset);
 
-    const poolAccount = new PublicKey("G2sRWJvi3xoyh5k2gY49eG9L8YhAEWQPtNb1zb1GXTtC");
-    const clockAccount = new PublicKey("7EbMUTLo5DjdzbN7s8BXeZwXzEwNQb1hScfRvWg8a6ot");
+    // Get strictly derived Arcium addresses from SDK
+    const poolAccount = getFeePoolAccAddress();
+    const clockAccount = getClockAccAddress();
+    const arciumProgramId = getArciumProgramId();
 
     logDivider();
     logInfo("Executing deposit transaction...");
@@ -204,31 +206,61 @@ async function testDeposit() {
           tokenProgram: TOKEN_PROGRAM_ID,
           associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID, // Added associatedTokenProgram
           systemProgram: SystemProgram.programId,
-          arciumProgram: ARCIUM_PROGRAM_ID,
+          arciumProgram: arciumProgramId,
         })
         .rpc();
 
       logSuccess("Transaction submitted!");
       logEntry("Signature", tx, icons.rocket);
 
-      // Wait for confirmation
-      await provider.connection.confirmTransaction(tx, "confirmed");
-      logSuccess("Transaction confirmed on-chain");
+      // Log Explorer URL
+      logSuccess("Transaction confirmed on-chain!");
+      logEntry("Explorer", `https://explorer.solana.com/tx/${tx}?cluster=devnet`, icons.link);
 
-      // Wait for MPC computation to finalize
+      // Wait for MPC computation to finalize (Polling)
       logDivider();
-      logInfo("Waiting for MPC computation to finalize...");
+      logInfo("Polling for computation finalization...");
       console.log(chalk.gray("   This happens off-chain on the Arcium network."));
-      
-      await waitForComputationFinalization(
-        provider,
-        computationOffset,
-        programId,
-        120000, // 2 minutes timeout
-        3000    // Poll every 3 seconds
-      );
+      console.log(chalk.gray("   You can check the computation status on the Arcium explorer or by monitoring the account below."));
 
-      logSuccess("Deposit completed successfully!");
+      const computationAccInfo = await provider.connection.getAccountInfo(computationAccount);
+      if (computationAccInfo) {
+          logEntry("Computation Account", "Created", icons.checkmark);
+      } else {
+          logEntry("Computation Account", "Waiting for creation...", icons.clock);
+      }
+
+      // Polling for Compuation Finalization and Obligation Creation
+      // The Arcium network will execute the request and callback to our program.
+      // Our program's callback instruction creates/updates the UserObligation account.
+      
+      const maxRetries = 60; // Wait up to ~2 minutes
+      let obligationFound = false;
+      
+      process.stdout.write("   Waiting for obligation account creation");
+      
+      for(let i = 0; i < maxRetries; i++) {
+          const obligationAccountInfo = await provider.connection.getAccountInfo(userObligation);
+          
+          if (obligationAccountInfo) {
+              console.log(""); // Newline
+              logEntry("User Obligation", "Created successfully", icons.checkmark);
+              obligationFound = true;
+              break;
+          }
+          
+          process.stdout.write(".");
+          await new Promise(r => setTimeout(r, 2000));
+      }
+      
+      if (!obligationFound) {
+          console.log("");
+          logWarning("User obligation account was not found after waiting.");
+          console.log(chalk.gray("   This might mean the Arcium computation failed or is still processing."));
+          console.log(chalk.gray(`   Check the Arcium Explorer for computation: ${computationAccount.toBase58()}`));
+      } else {
+          logSuccess("Deposit completed and verified successfully!");
+      }
       
       // Fetch and display user obligation state
       logSection("Final State");
@@ -236,10 +268,26 @@ async function testDeposit() {
         const obligationAccount = await (program.account as any).userObligation.fetch(userObligation);
         logEntry("User", obligationAccount.user.toBase58(), icons.key);
         logEntry("Pool", obligationAccount.pool.toBase58(), icons.link);
-        logEntry("Encrypted Collateral", Buffer.from(obligationAccount.encryptedCollateral as any).toString('hex').substring(0, 32) + "...", icons.key);
-        logEntry("Encrypted Debt", Buffer.from(obligationAccount.encryptedDebt as any).toString('hex').substring(0, 32) + "...", icons.key);
+        
+        // Handle potentially encrypted fields more gracefully if types differ
+        const encDeposit = obligationAccount.encryptedDeposit;
+        const encBorrow = obligationAccount.encryptedBorrow;
+        
+        logEntry("Encrypted Deposit", 
+            Array.isArray(encDeposit) || Buffer.isBuffer(encDeposit) 
+            ? Buffer.from(encDeposit as any).toString('hex').substring(0, 32) + "..." 
+            : String(encDeposit), 
+            icons.key
+        );
+        
+        logEntry("Encrypted Borrow", 
+            Array.isArray(encBorrow) || Buffer.isBuffer(encBorrow) 
+            ? Buffer.from(encBorrow as any).toString('hex').substring(0, 32) + "..." 
+            : String(encBorrow), 
+            icons.key
+        );
       } catch (error) {
-        logWarning("Could not fetch obligation account (may not exist yet)");
+        logError("Failed to decode obligation account data", error);
       }
       logDivider();
 

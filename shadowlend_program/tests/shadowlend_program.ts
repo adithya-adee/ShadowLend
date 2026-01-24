@@ -1,7 +1,17 @@
+import * as dotenv from "dotenv";
+dotenv.config();
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
-import { PublicKey } from "@solana/web3.js";
+import { PublicKey, SystemProgram, Keypair } from "@solana/web3.js";
 import { ShadowlendProgram } from "../target/types/shadowlend_program";
+import {
+  TOKEN_PROGRAM_ID,
+  ASSOCIATED_TOKEN_PROGRAM_ID,
+  createMint,
+  getAssociatedTokenAddress,
+  createAssociatedTokenAccount,
+  mintTo,
+} from "@solana/spl-token";
 import { randomBytes } from "crypto";
 import {
   awaitComputationFinalization,
@@ -9,10 +19,7 @@ import {
   getCompDefAccOffset,
   getArciumAccountBaseSeed,
   getArciumProgramId,
-  uploadCircuit,
   buildFinalizeCompDefTx,
-  RescueCipher,
-  deserializeLE,
   getMXEPublicKey,
   getMXEAccAddress,
   getMempoolAccAddress,
@@ -20,207 +27,223 @@ import {
   getExecutingPoolAccAddress,
   getComputationAccAddress,
   getClusterAccAddress,
+  getClockAccAddress,
+  getFeePoolAccAddress,
   x25519,
 } from "@arcium-hq/client";
 import * as fs from "fs";
 import * as os from "os";
 import { expect } from "chai";
 
-describe("ShadowlendProgram", () => {
-  // Configure the client to use the local cluster.
+describe("shadowlend-program", () => {
   anchor.setProvider(anchor.AnchorProvider.env());
-  const program = anchor.workspace
-    .ShadowlendProgram as Program<ShadowlendProgram>;
-  const provider = anchor.getProvider();
-
-  type Event = anchor.IdlEvents<(typeof program)["idl"]>;
-  const awaitEvent = async <E extends keyof Event>(
-    eventName: E,
-  ): Promise<Event[E]> => {
-    let listenerId: number;
-    const event = await new Promise<Event[E]>((res) => {
-      listenerId = program.addEventListener(eventName, (event) => {
-        res(event);
-      });
-    });
-    await program.removeEventListener(listenerId);
-
-    return event;
-  };
-
+  const program = anchor.workspace.ShadowlendProgram as Program<ShadowlendProgram>;
+  const provider = anchor.getProvider() as anchor.AnchorProvider;
   const arciumEnv = getArciumEnv();
-  const clusterAccount = getClusterAccAddress(arciumEnv.arciumClusterOffset);
 
-  it("Is initialized!", async () => {
-    const owner = readKpJson(`${os.homedir()}/.config/solana/id.json`);
+  // Test state
+  let collateralMint: PublicKey;
+  let borrowMint: PublicKey;
+  let poolPda: PublicKey;
+  let collateralVaultPda: PublicKey;
+  let borrowVaultPda: PublicKey;
+  let userTokenAccount: PublicKey;
+  
+  const user = anchor.web3.Keypair.generate();
+  const payer = (provider.wallet as any).payer;
 
-    console.log("Initializing add together computation definition");
-    const initATSig = await initAddTogetherCompDef(
-      program,
-      owner,
-      false,
-      false,
+  before(async () => {
+    // Fund user
+    await provider.connection.requestAirdrop(user.publicKey, 10 * anchor.web3.LAMPORTS_PER_SOL);
+    
+    // Create mints
+    collateralMint = await createMint(
+      provider.connection,
+      payer,
+      payer.publicKey,
+      null,
+      6
     );
-    console.log(
-      "Add together computation definition initialized with signature",
-      initATSig,
+    borrowMint = await createMint(
+      provider.connection,
+      payer,
+      payer.publicKey,
+      null,
+      6
     );
 
-    const mxePublicKey = await getMXEPublicKeyWithRetry(
-      provider as anchor.AnchorProvider,
-      program.programId,
+    // Derive Pool PDA
+    const [pool] = PublicKey.findProgramAddressSync(
+      [Buffer.from("pool")],
+      program.programId
     );
+    poolPda = pool;
 
-    console.log("MXE x25519 pubkey is", mxePublicKey);
-
-    const privateKey = x25519.utils.randomSecretKey();
-    const publicKey = x25519.getPublicKey(privateKey);
-
-    const sharedSecret = x25519.getSharedSecret(privateKey, mxePublicKey);
-    const cipher = new RescueCipher(sharedSecret);
-
-    const val1 = BigInt(1);
-    const val2 = BigInt(2);
-    const plaintext = [val1, val2];
-
-    const nonce = randomBytes(16);
-    const ciphertext = cipher.encrypt(plaintext, nonce);
-
-    const sumEventPromise = awaitEvent("sumEvent");
-    const computationOffset = new anchor.BN(randomBytes(8), "hex");
-
-    const queueSig = await program.methods
-      .addTogether(
-        computationOffset,
-        Array.from(ciphertext[0]),
-        Array.from(ciphertext[1]),
-        Array.from(publicKey),
-        new anchor.BN(deserializeLE(nonce).toString()),
-      )
-      .accountsPartial({
-        computationAccount: getComputationAccAddress(
-          arciumEnv.arciumClusterOffset,
-          computationOffset,
-        ),
-        clusterAccount,
-        mxeAccount: getMXEAccAddress(program.programId),
-        mempoolAccount: getMempoolAccAddress(arciumEnv.arciumClusterOffset),
-        executingPool: getExecutingPoolAccAddress(
-          arciumEnv.arciumClusterOffset,
-        ),
-        compDefAccount: getCompDefAccAddress(
-          program.programId,
-          Buffer.from(getCompDefAccOffset("add_together")).readUInt32LE(),
-        ),
-      })
-      .rpc({ skipPreflight: true, commitment: "confirmed" });
-    console.log("Queue sig is ", queueSig);
-
-    const finalizeSig = await awaitComputationFinalization(
-      provider as anchor.AnchorProvider,
-      computationOffset,
-      program.programId,
-      "confirmed",
+    // Derive Vaults
+    const [cv] = PublicKey.findProgramAddressSync(
+      [Buffer.from("collateral_vault"), pool.toBuffer()],
+      program.programId
     );
-    console.log("Finalize sig is ", finalizeSig);
+    collateralVaultPda = cv;
 
-    const sumEvent = await sumEventPromise;
-    const decrypted = cipher.decrypt([sumEvent.sum], sumEvent.nonce)[0];
-    expect(decrypted).to.equal(val1 + val2);
+    const [bv] = PublicKey.findProgramAddressSync(
+      [Buffer.from("borrow_vault"), pool.toBuffer()],
+      program.programId
+    );
+    borrowVaultPda = bv;
   });
 
-  async function initAddTogetherCompDef(
-    program: Program<ShadowlendProgram>,
-    owner: anchor.web3.Keypair,
-    uploadRawCircuit: boolean,
-    offchainSource: boolean,
-  ): Promise<string> {
-    const baseSeedCompDefAcc = getArciumAccountBaseSeed(
-      "ComputationDefinitionAccount",
-    );
-    const offset = getCompDefAccOffset("add_together");
+  it("Initializes the pool", async () => {
+    const ltv = 7500;
+    const thresh = 8500;
 
-    const compDefPDA = PublicKey.findProgramAddressSync(
-      [baseSeedCompDefAcc, program.programId.toBuffer(), offset],
-      getArciumProgramId(),
-    )[0];
-
-    console.log("Comp def pda is ", compDefPDA);
-
-    const sig = await program.methods
-      .initAddTogetherCompDef()
+    await program.methods
+      .initializePool(ltv, thresh)
       .accounts({
-        compDefAccount: compDefPDA,
-        payer: owner.publicKey,
-        mxeAccount: getMXEAccAddress(program.programId),
+        authority: provider.wallet.publicKey,
+        collateralMint,
+        borrowMint,
       })
-      .signers([owner])
-      .rpc({
-        commitment: "confirmed",
-      });
-    console.log("Init add together computation definition transaction", sig);
+      .rpc();
+      
+    const poolAccount = await program.account.pool.fetch(poolPda);
+    expect(poolAccount.ltvBps).to.equal(ltv);
+  });
 
-    if (uploadRawCircuit) {
-      const rawCircuit = fs.readFileSync("build/add_together.arcis");
-
-      await uploadCircuit(
-        provider as anchor.AnchorProvider,
-        "add_together",
+  it("Initializes Deposit Computation Definition", async () => {
+    // Initialize Comp Def
+    const offset = getCompDefAccOffset("deposit");
+    const compDefPDA = getCompDefAccAddress(
         program.programId,
-        rawCircuit,
-        true,
-      );
-    } else if (!offchainSource) {
-      const finalizeTx = await buildFinalizeCompDefTx(
-        provider as anchor.AnchorProvider,
-        Buffer.from(offset).readUInt32LE(),
-        program.programId,
-      );
+        Buffer.from(offset).readUInt32LE()
+    );
 
-      const latestBlockhash = await provider.connection.getLatestBlockhash();
-      finalizeTx.recentBlockhash = latestBlockhash.blockhash;
-      finalizeTx.lastValidBlockHeight = latestBlockhash.lastValidBlockHeight;
-
-      finalizeTx.sign(owner);
-
-      await provider.sendAndConfirm(finalizeTx);
-    }
-    return sig;
-  }
-});
-
-async function getMXEPublicKeyWithRetry(
-  provider: anchor.AnchorProvider,
-  programId: PublicKey,
-  maxRetries: number = 20,
-  retryDelayMs: number = 500,
-): Promise<Uint8Array> {
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      const mxePublicKey = await getMXEPublicKey(provider, programId);
-      if (mxePublicKey) {
-        return mxePublicKey;
-      }
-    } catch (error) {
-      console.log(`Attempt ${attempt} failed to fetch MXE public key:`, error);
+        await program.methods
+        .initDepositCompDef()
+        .accounts({
+            authority: provider.wallet.publicKey,
+            mxeAccount: getMXEAccAddress(program.programId),
+            compDefAccount: compDefPDA,
+        })
+        .rpc();
+    } catch(e) {
+        // Ignore if already initialized
+        console.log("Comp def might be already initialized");
     }
 
-    if (attempt < maxRetries) {
-      console.log(
-        `Retrying in ${retryDelayMs}ms... (attempt ${attempt}/${maxRetries})`,
-      );
-      await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+    // Finalize Comp Def (mocking offchain finalization for localnet/devnet if needed, 
+    // but typically Arcium client handles this or we simulate it. 
+    // For local tests without real Arcium nodes, we often skip or mock.
+    // However, assuming integrated environment:
+    
+    // Here we usually assume checking if it's finalized or finalize it. 
+    // The previous test mock finalized it.
+    
+    // We will assume environment is set up or try to finalize.
+    try {
+        const finalizeTx = await buildFinalizeCompDefTx(
+            provider,
+            Buffer.from(offset).readUInt32LE(),
+            program.programId
+        );
+         const latestBlockhash = await provider.connection.getLatestBlockhash();
+          finalizeTx.recentBlockhash = latestBlockhash.blockhash;
+          finalizeTx.lastValidBlockHeight = latestBlockhash.lastValidBlockHeight;
+          finalizeTx.sign(payer);
+          await provider.sendAndConfirm(finalizeTx);
+    } catch (e) {
+        console.log("Finalization might have failed or already done", e);
     }
-  }
+  });
 
-  throw new Error(
-    `Failed to fetch MXE public key after ${maxRetries} attempts`,
-  );
-}
+  it("Deposits successfully", async () => {
+    // Setup user token account and mint tokens
+    userTokenAccount = await createAssociatedTokenAccount(
+      provider.connection,
+      payer,
+      collateralMint,
+      user.publicKey
+    );
 
-function readKpJson(path: string): anchor.web3.Keypair {
-  const file = fs.readFileSync(path);
-  return anchor.web3.Keypair.fromSecretKey(
-    new Uint8Array(JSON.parse(file.toString())),
-  );
-}
+    const amount = 100_000n;
+    await mintTo(
+      provider.connection,
+      payer,
+      collateralMint,
+      userTokenAccount,
+      payer,
+      amount
+    );
+
+    // Prepare deposit args
+    const computationOffset = new anchor.BN(randomBytes(8));
+    const userNonce = new anchor.BN(Date.now());
+    
+    // Encryption keys
+    const userKeypair = x25519.utils.randomPrivateKey();
+    const userPubkey = x25519.getPublicKey(userKeypair);
+
+    // Derive PDAs
+    const [userObligation] = PublicKey.findProgramAddressSync(
+      [Buffer.from("obligation"), user.publicKey.toBuffer(), poolPda.toBuffer()],
+      program.programId
+    );
+    
+    // signPdaAccount is auto-derived (constant seeds)
+    
+    const depositAmount = new anchor.BN(amount.toString());
+
+    // Execute Deposit
+    await program.methods
+      .deposit(
+        computationOffset,
+        depositAmount,
+        Array.from(userPubkey),
+        userNonce
+      )
+      .accounts({
+        payer: user.publicKey,
+        mxeAccount: getMXEAccAddress(program.programId),
+        mempoolAccount: getMempoolAccAddress(arciumEnv.arciumClusterOffset),
+        executingPool: getExecutingPoolAccAddress(arciumEnv.arciumClusterOffset),
+        computationAccount: getComputationAccAddress(arciumEnv.arciumClusterOffset, computationOffset),
+        compDefAccount: getCompDefAccAddress(
+            program.programId,
+            Buffer.from(getCompDefAccOffset("deposit")).readUInt32LE(),
+        ),
+        
+        clusterAccount: getClusterAccAddress(arciumEnv.arciumClusterOffset),
+        
+        collateralMint,
+      })
+      .signers([user])
+      .rpc();
+
+    console.log("Deposit tx successful, waiting for finalization...");
+    
+    // Wait for callback (Computation Finalization)
+    try {
+        await awaitComputationFinalization(
+          provider,
+          computationOffset,
+          program.programId,
+          "confirmed"
+        );
+    } catch(e) {
+        console.log("Finalization wait failed or timed out", e);
+    }
+    
+    // Check UserObligation
+    const obligation = await program.account.userObligation.fetch(userObligation);
+    console.log("Obligation State Nonce:", obligation.stateNonce.toString());
+    console.log("Encrypted Deposit:", obligation.encryptedDeposit);
+    
+    expect(obligation.user.toBase58()).to.equal(user.publicKey.toBase58());
+    expect(obligation.pool.toBase58()).to.equal(poolPda.toBase58());
+    // Verification of encrypted deposit requires decryption using the cluster key, 
+    // but here we at least verify it's not empty if successful, or check state nonce.
+    // If the callback fails, stateNonce won't increment (it starts at 0).
+    expect(obligation.stateNonce.gt(new anchor.BN(0))).to.be.true;
+  });
+});

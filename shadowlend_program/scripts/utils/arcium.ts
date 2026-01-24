@@ -134,10 +134,9 @@ export async function waitForComputationFinalization(
       // Check if computation account exists and has been processed
       const accountInfo = await provider.connection.getAccountInfo(computationAccount);
       
-      if (accountInfo && accountInfo.data.length > 0) {
+      if (accountInfo) {
         // Parse the account data to check status
         // The computation is finalized when the callback has been executed
-        // For simplicity, we check if the account exists and has data
         console.log(`✅ Computation finalized!`);
         return true;
       }

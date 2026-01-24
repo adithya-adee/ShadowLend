@@ -1,15 +1,12 @@
 {
   "network": "devnet",
   "programId": "wQPJWnqgWYwQCgU8CqWC8kn9yagmgPZ7TTF8LVkFakJ",
-  "timestamp": "2026-01-24T09:40:10.400Z",
+  "timestamp": "2026-01-24T10:04:46.416Z",
   "poolAddress": "9rJZhSZLfzAnuKUBHgvtWDmZWyHZAcmWuK1wRk52FLxw",
   "collateralMint": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
   "borrowMint": "So11111111111111111111111111111111111111112",
   "mxeAccount": "9Zh3N6YwDBPnBYzeM5ufxbG4JnL8kAevsm87pDzy9ZRt",
   "computationDefinitions": {
-    "deposit": "3B3qS93VBujTbTp4hV4ifMFiEnbNTSpQzKBtXCWSJ1Nf",
-    "withdraw": "PmYDpNQH4y6EEyTu7Pw3FqLrFbSnXo8eenTYrKu7r8x",
-    "borrow": "7ENGk6uLKNaKMuGMpFnAc4hpZn9WPXQJievdCMMdiadP",
-    "repay": "D65ZuP38NbytwRit56NfzFT7kgTq2gUCUA4MG58g7ZvB"
+    "deposit": "3B3qS93VBujTbTp4hV4ifMFiEnbNTSpQzKBtXCWSJ1Nf"
   }
 }

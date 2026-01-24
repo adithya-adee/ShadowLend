@@ -41,6 +41,8 @@ pub fn repay_handler(ctx: Context<Repay>, computation_offset: u64, amount: u64) 
         args.encrypted_u128([0u8; 32])
     };
 
+    ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
+
     queue_computation(
         ctx.accounts,
         computation_offset,

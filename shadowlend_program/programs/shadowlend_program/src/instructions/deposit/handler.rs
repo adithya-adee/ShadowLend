@@ -56,6 +56,8 @@ pub fn deposit_handler(
         args.build()
     };
 
+    ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
+
     let transfer_cpi = Transfer {
         from: ctx.accounts.user_token_account.to_account_info(),
         to: ctx.accounts.collateral_vault.to_account_info(),

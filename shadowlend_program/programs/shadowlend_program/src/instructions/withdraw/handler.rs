@@ -44,6 +44,8 @@ pub fn withdraw_handler(
 
     args = args.plaintext_u64(ltv_bps);
 
+    ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
+
     queue_computation(
         ctx.accounts,
         computation_offset,

@@ -40,6 +40,8 @@ pub fn borrow_handler(ctx: Context<Borrow>, computation_offset: u64, amount: u64
 
     args = args.plaintext_u64(ltv_bps);
 
+    ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
+
     queue_computation(
         ctx.accounts,
         computation_offset,

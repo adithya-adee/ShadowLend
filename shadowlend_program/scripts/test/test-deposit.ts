@@ -1,6 +1,6 @@
 import { Wallet, BN, Program } from "@coral-xyz/anchor";
 import { PublicKey, Keypair, SystemProgram, SYSVAR_INSTRUCTIONS_PUBKEY } from "@solana/web3.js";
-import { TOKEN_PROGRAM_ID, getAssociatedTokenAddress, createAssociatedTokenAccountInstruction, getAccount } from "@solana/spl-token";
+import { TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, getAssociatedTokenAddress, createAssociatedTokenAccountInstruction, getAccount } from "@solana/spl-token";
 import chalk from "chalk";
 import { 
   createProvider, 
@@ -86,6 +86,7 @@ async function testDeposit() {
     logSection("Account Derivation");
     logEntry("User Obligation", userObligation.toBase58(), icons.link);
     logEntry("Collateral Vault", collateralVault.toBase58(), icons.link);
+    logEntry("Sign PDA Account", signPdaAccount.toBase58(), icons.link);
 
     // Get or create user token account
     const userTokenAccount = await getAssociatedTokenAddress(
@@ -197,9 +198,11 @@ async function testDeposit() {
           clockAccount,
           pool: poolPda,
           userObligation,
+          collateralMint, // Added collateralMint
           userTokenAccount,
           collateralVault,
           tokenProgram: TOKEN_PROGRAM_ID,
+          associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID, // Added associatedTokenProgram
           systemProgram: SystemProgram.programId,
           arciumProgram: ARCIUM_PROGRAM_ID,
         })

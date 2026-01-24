@@ -78,6 +78,33 @@ async function initializePool() {
     const poolAccount = await provider.connection.getAccountInfo(poolPda);
     
     if (poolAccount) {
+
+      const [collateralPda, collateralBump] = PublicKey.findProgramAddressSync(
+        [Buffer.from("collateral_vault"), poolPda.toBuffer()],
+        programId
+      );
+
+      const [borrowPda, borrowBump] = PublicKey.findProgramAddressSync(
+        [Buffer.from("borrow_vault"), poolPda.toBuffer()],
+        programId
+      );
+
+      const borrowVault = await provider.connection.getAccountInfo(borrowPda);
+
+      if (borrowVault) {
+        logEntry("Borrow Vault", borrowPda.toBase58(), icons.checkmark);
+      } else {
+        logEntry("Borrow Vault", borrowPda.toBase58(), icons.cross);
+      }
+
+      const collateralVault = await provider.connection.getAccountInfo(collateralPda);
+
+      if (collateralVault) {
+        logEntry("Collateral Vault", collateralPda.toBase58(), icons.checkmark);
+      } else {
+        logEntry("Collateral Vault", collateralPda.toBase58(), icons.cross);
+      }
+
       logEntry("Status", "Already Initialized", icons.checkmark);
       logInfo("Pool already exists, skipping initialization.");
     } else {

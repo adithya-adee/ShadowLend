@@ -1,11 +1,12 @@
 import { Wallet, Program, BN } from "@coral-xyz/anchor";
 import { PublicKey, SystemProgram } from "@solana/web3.js";
-import { TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, getAssociatedTokenAddress, createAssociatedTokenAccountInstruction, getAccount } from "@solana/spl-token";
+import { TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, getAssociatedTokenAddress, createAssociatedTokenAccountInstruction, mintTo, getAccount } from "@solana/spl-token";
 import { generateKeyPairSync } from "crypto";
 import chalk from "chalk";
 import { 
   createProvider, 
   getNetworkConfig, 
+  loadProgram,
   logHeader, 
   logSection, 
   logEntry, 
@@ -17,12 +18,13 @@ import {
   icons 
 } from "../utils/config";
 import { getWalletKeypair, loadDeployment } from "../utils/deployment";
-import { getMxeAccount, checkMxeKeysSet } from "../utils/arcium";
+import { getMxeAccount, getArciumProgramInstance, generateComputationOffset, checkMxeKeysSet } from "../utils/arcium";
 import { getCompDefAccOffset, getCompDefAccAddress, getClusterAccAddress, getComputationAccAddress, getExecutingPoolAccAddress, getMempoolAccAddress, getFeePoolAccAddress, getClockAccAddress, getArciumProgramId } from "@arcium-hq/client";
-import { generateComputationOffset } from "../utils/arcium";
+import * as idl from "../../target/idl/shadowlend_program.json";
 
 /**
  * Test repay instruction
+ * Requires prior Deposit and Borrow
  */
 async function testRepay() {
   try {
@@ -33,32 +35,35 @@ async function testRepay() {
     const walletKeypair = getWalletKeypair();
     const wallet = new Wallet(walletKeypair);
     
-    // Create provider
+    logSection("Configuration");
+    logEntry("Network", config.name, icons.sparkle);
+    logEntry("Wallet", wallet.publicKey.toBase58(), icons.key);
+
     const provider = createProvider(wallet, config);
 
     // Load deployment
     const deployment = loadDeployment();
-    if (!deployment || !deployment.programId || !deployment.poolAddress) {
-      throw new Error("Deployment not found. Run initialize-pool first.");
+    if (!deployment || !deployment.programId || !deployment.poolAddress || !deployment.borrowMint) {
+      throw new Error("Deployment missing. Run setup/initialize scripts.");
     }
 
     const programId = new PublicKey(deployment.programId);
     const poolPda = new PublicKey(deployment.poolAddress);
-    
-    // Initialize Program
-    const idl = require("../../target/idl/shadowlend_program.json");
-    const program = new Program(idl, provider);
+    const borrowMint = new PublicKey(deployment.borrowMint);
 
     logEntry("Program ID", programId.toBase58(), icons.folder);
     logEntry("Pool", poolPda.toBase58(), icons.link);
 
-    // Derive user obligation PDA
+    const program = await loadProgram(provider, programId, idl) as Program;
+
+    // Derived Accounts
     const [userObligation] = PublicKey.findProgramAddressSync(
-      [
-        Buffer.from("obligation"),
-        wallet.publicKey.toBuffer(),
-        poolPda.toBuffer(),
-      ],
+      [Buffer.from("obligation"), wallet.publicKey.toBuffer(), poolPda.toBuffer()],
+      programId
+    );
+
+    const [borrowVault] = PublicKey.findProgramAddressSync(
+      [Buffer.from("borrow_vault"), poolPda.toBuffer()],
       programId
     );
 
@@ -67,216 +72,155 @@ async function testRepay() {
         programId
     );
 
-    logEntry("User Obligation", userObligation.toBase58(), icons.link);
+    const userTokenAccount = await getAssociatedTokenAddress(borrowMint, wallet.publicKey);
 
-    // Check if user has debt
-    let initialObligationState;
-    try {
-        initialObligationState = await (program.account as any).userObligation.fetch(userObligation);
-    } catch (e) {
-        logError("User obligation not found. Borrow first.");
-        process.exit(1);
-    }
-    const initialNonce = initialObligationState.stateNonce.toNumber();
+    // Arcium Setup
+    const mxeAccount = getMxeAccount(programId);
+    const mempoolAccount = getMempoolAccAddress(config.arciumClusterOffset);
+    const executingPool = getExecutingPoolAccAddress(config.arciumClusterOffset);
+    const clusterAccount = getClusterAccAddress(config.arciumClusterOffset);
+    const poolAccount = getFeePoolAccAddress();
+    const clockAccount = getClockAccAddress();
+    const arciumProgramId = getArciumProgramId();
 
-    // Fetch Pool to get Mint
-    const poolAccount = await (program.account as any).pool.fetch(poolPda);
-    const borrowMint = poolAccount.borrowMint;
-    
-    // Get user token account (associated with borrow mint)
-    const userTokenAccount = await getAssociatedTokenAddress(
-        borrowMint,
-        wallet.publicKey
-    );
-    
-    // Get Borrow Vault
-    const [borrowVault] = PublicKey.findProgramAddressSync(
-        [Buffer.from("borrow_vault"), poolPda.toBuffer()],
-        programId
-    );
-
-    // Test parameters
-    const repayAmount = new BN(100_000); // 0.1 token
-    const computationOffset = generateComputationOffset();
-
-    logSection("Repay Parameters");
-    logEntry("Amount", repayAmount.toString(), icons.arrow);
-    logEntry("Computation Offset", computationOffset.toString(), icons.clock);
-
-    // Generate valid X25519 keypair for Arcium context
     const { publicKey: x25519PubDer } = generateKeyPairSync("x25519", {
         publicKeyEncoding: { format: "der", type: "spki" },
         privateKeyEncoding: { format: "der", type: "pkcs8" }
     });
     const x25519PubBytes = x25519PubDer as Buffer; 
     const userPubkey = Array.from(x25519PubBytes.subarray(x25519PubBytes.length - 32));
-    const userNonce = new BN(Date.now()).mul(new BN(1000000)); // u128
+    const userNonce = new BN(Date.now()).mul(new BN(1000000));
 
-    // Arcium Accounts
-    const mxeAccount = getMxeAccount(programId);
-    
-    const clusterOffset = (config as any).arciumClusterOffset || 0; 
-
-    const mempoolAccount = getMempoolAccAddress(clusterOffset);
-    const executingPool = getExecutingPoolAccAddress(clusterOffset);
-    const computationAccount = getComputationAccAddress(clusterOffset, computationOffset);
-    let clusterAccount = getClusterAccAddress(clusterOffset);
-
-    // Check if cluster account exists
-    const clusterAccountInfo = await provider.connection.getAccountInfo(clusterAccount);
-    let finalClusterOffset = clusterOffset;
-
-    if (!clusterAccountInfo) {
-        logWarning(`Cluster account not found at offset ${clusterOffset}. Checking offset 0...`);
-        const fallbackOffset = 0;
-        const fallbackClusterAccount = getClusterAccAddress(fallbackOffset);
-        const fallbackInfo = await provider.connection.getAccountInfo(fallbackClusterAccount);
-        
-        if (fallbackInfo) {
-            logSuccess(`Found cluster account at offset ${fallbackOffset}! Switching offset.`);
-            finalClusterOffset = fallbackOffset;
-            clusterAccount = fallbackClusterAccount;
-        } else {
-             logError("Cluster account not found at offset 0 or 1. Ensure Arcium localnet is running.");
-        }
-    } else {
-        logEntry("Cluster Account", "Exists", icons.checkmark);
+    // Verify Obligation
+    let obligationAccount;
+    try {
+        obligationAccount = await (program.account as any).userObligation.fetch(userObligation);
+    } catch (e) {
+        throw new Error("User obligation not found. Run test-deposit and test-borrow first.");
     }
 
-    // Re-derive based on final offset
-    const finalMempoolAccount = getMempoolAccAddress(finalClusterOffset);
-    const finalExecutingPool = getExecutingPoolAccAddress(finalClusterOffset);
-    const finalComputationAccount = getComputationAccAddress(finalClusterOffset, computationOffset);
+    logSection("Current Status");
+    logEntry("Encrypted Deposit", Buffer.from(obligationAccount.encryptedDeposit).toString('hex').substring(0, 16) + "...", icons.info);
+    logEntry("Encrypted Borrow", Buffer.from(obligationAccount.encryptedBorrow).toString('hex').substring(0, 16) + "...", icons.info);
+    
+    // Repay Amount (assuming 500,000 was borrowed)
+    const repayAmount = new BN(500_000); // Repay full borrow
+    const computationOffset = generateComputationOffset();
+
+    // Ensure User has tokens to repay
+    // If borrow failed to transfer, we might need to mint?
+    // Let's check balance
+    let userBalance = 0n;
+    try {
+        const bal = await provider.connection.getTokenAccountBalance(userTokenAccount);
+        userBalance = BigInt(new BN(bal.value.amount).toString());
+    } catch (e) { logWarning("User token account not found/empty"); }
+    
+    logEntry("User Wallet Balance", userBalance.toString(), icons.key);
+    
+    if (userBalance < BigInt(repayAmount.toString())) {
+        logWarning("User balance insufficient for repay. Borrow transfer might have failed.");
+        logInfo("Minting tokens to user to allow repay test...");
+        // Mint tokens so we can test repay logic at least
+        await mintTo(provider.connection, wallet.payer, borrowMint, userTokenAccount, wallet.payer, 500_000);
+        logSuccess("Minted 500,000 tokens to user.");
+    }
+
+    logDivider();
+    logHeader("Step 1: Repay");
+    logEntry("Amount", repayAmount.toString(), icons.arrow);
+    logEntry("Computation Offset", computationOffset.toString(), icons.clock);
+
+    const preUserBalance = (await getAccount(provider.connection, userTokenAccount)).amount;
+    const preVaultBalance = (await getAccount(provider.connection, borrowVault)).amount;
+    const initialNonce = obligationAccount.stateNonce.toNumber();
 
     // Comp Def for Repay
     const compDefOffsetBytes = getCompDefAccOffset("repay");
     const compDefOffset = Buffer.from(compDefOffsetBytes).readUInt32LE();
     const compDefAccount = getCompDefAccAddress(programId, compDefOffset);
 
-    // System accounts
-    const poolAccountArcium = getFeePoolAccAddress();
-    const clockAccount = getClockAccAddress();
-    const arciumProgramId = getArciumProgramId();
+    // Call Repay
+    const tx = await program.methods.repay(
+        computationOffset,
+        repayAmount,
+        userPubkey,
+        userNonce
+    ).accountsPartial({
+        payer: wallet.publicKey,
+        signPdaAccount,
+        mxeAccount,
+        mempoolAccount,
+        executingPool,
+        computationAccount: getComputationAccAddress(config.arciumClusterOffset, computationOffset),
+        compDefAccount,
+        clusterAccount,
+        poolAccount,
+        clockAccount,
+        pool: poolPda,
+        userObligation,
+        borrowMint,
+        userTokenAccount,
+        borrowVault,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+        arciumProgram: arciumProgramId,
+    }).rpc();
 
-    // Check balances
-    let initialTokenBalance = 0n;
-    try {
-        const info = await getAccount(provider.connection, userTokenAccount);
-        initialTokenBalance = info.amount;
-        logEntry("User Token Balance (Pre)", initialTokenBalance.toString(), icons.info);
-        
-        if (initialTokenBalance < BigInt(repayAmount.toString())) {
-             logError(`Insufficient balance! Need ${repayAmount}, have ${initialTokenBalance}. Run test-borrow first.`);
-             return;
-        }
+    logSuccess("Repay transaction submitted!");
+    logEntry("Signature", tx, icons.rocket);
 
-    } catch(e) {
-        logError("User Token Account not found. Run test-borrow first.");
-        return;
+    // Poll for state update
+    logInfo("Polling for state update...");
+    let success = false;
+    for(let i=0; i<90; i++) {
+        try {
+            const current = await (program.account as any).userObligation.fetch(userObligation);
+            if (current.stateNonce.toNumber() > initialNonce) {
+                logSuccess("State updated!");
+                success = true;
+                break;
+            }
+        } catch(e) {}
+        await new Promise(r => setTimeout(r, 2000));
     }
-    
-    const initialVaultBalance = (await getAccount(provider.connection, borrowVault)).amount;
-    logEntry("Vault Balance (Pre)", initialVaultBalance.toString(), icons.info);
+
+    if (!success) throw new Error("Repay callback timeout.");
 
     logDivider();
-    logInfo("Executing repay transaction...");
+    logHeader("Verification");
 
-    try {
-        const tx = await program.methods
-            .repay(
-                computationOffset,
-                repayAmount,
-                userPubkey,
-                userNonce
-            )
-            .accountsPartial({
-                payer: wallet.publicKey,
-                signPdaAccount,
-                mxeAccount,
-                mempoolAccount: finalMempoolAccount,
-                executingPool: finalExecutingPool,
-                computationAccount: finalComputationAccount,
-                compDefAccount,
-                clusterAccount: clusterAccount,
-                poolAccount: poolAccountArcium,
-                clockAccount,
-                pool: poolPda,
-                userObligation,
-                borrowMint,
-                userTokenAccount,
-                borrowVault,
-                tokenProgram: TOKEN_PROGRAM_ID,
-                associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
-                systemProgram: SystemProgram.programId,
-                arciumProgram: arciumProgramId,
-            })
-            .rpc();
+    // Check Balances
+    const finalUserBalance = (await getAccount(provider.connection, userTokenAccount)).amount;
+    const finalVaultBalance = (await getAccount(provider.connection, borrowVault)).amount;
 
-        logSuccess("Transaction submitted!");
-        logEntry("Signature", tx, icons.rocket);
+    logEntry("User Balance Change", `${preUserBalance} -> ${finalUserBalance}`, icons.info);
+    logEntry("Vault Balance Change", `${preVaultBalance} -> ${finalVaultBalance}`, icons.info);
 
-        // Immediate check: Balance should have decreased
-        await new Promise(r => setTimeout(r, 2000));
-        const midTokenInfo = await getAccount(provider.connection, userTokenAccount);
-        if (midTokenInfo.amount < initialTokenBalance) {
-             logSuccess(`Tokens transferred successfully (Balance: ${midTokenInfo.amount})`);
-        } else {
-             logWarning("Token balance did not decrease immediately! Check logic.");
-        }
-
-        // Polling loop for state update
-        logDivider();
-        logInfo("Polling for state update...");
-        
-        const maxRetries = 90; 
-        let success = false;
-        
-        for(let i=0; i<maxRetries; i++) {
-            try {
-                const currentAccount = await (program.account as any).userObligation.fetch(userObligation);
-                const currentNonce = currentAccount.stateNonce.toNumber();
-                
-                if (currentNonce > initialNonce) {
-                    console.log("");
-                    logSuccess("State updated!");
-                    success = true;
-                    break;
-                }
-            } catch(e) {}
-            process.stdout.write(".");
-            await new Promise(r => setTimeout(r, 2000));
-        }
-
-        if (!success) {
-            logError("Timeout waiting for state update.");
-        } else {
-            logDivider();
-            logHeader("Verification");
-            
-            // final balance check
-            const finalTokenInfo = await getAccount(provider.connection, userTokenAccount);
-            const finalBalance = finalTokenInfo.amount;
-            
-            logEntry("Final Balance (User)", finalBalance.toString(), icons.key);
-            
-            // Check Encrypted State
-            logSuccess("Encrypted Borrow updated.");
-        }
-
-    } catch (error: any) {
-        logError("Repay transaction failed", error);
-        if (error.logs) {
-            logSection("Logs");
-            error.logs.forEach((l: string) => console.log(chalk.gray(l)));
-        }
-        throw error;
+    if (preUserBalance - finalUserBalance === BigInt(repayAmount.toString())) {
+        logSuccess("User balance decreased correctly.");
+    } else {
+        logWarning("User balance did not decrease correctly.");
     }
 
-  } catch (error) {
+    if (finalVaultBalance - preVaultBalance === BigInt(repayAmount.toString())) {
+        logSuccess("Vault balance increased correctly.");
+    } else {
+        logWarning("Vault balance did not increase correctly.");
+    }
+
+    // Check Encrypted Borrow
+    const finalObligation = await (program.account as any).userObligation.fetch(userObligation);
+    logEntry("New Encrypted Borrow", Buffer.from(finalObligation.encryptedBorrow).toString('hex').substring(0, 16) + "...", icons.key);
+
+  } catch (error: any) {
     logError("Repay test failed", error);
+    if (error.logs) {
+        error.logs.forEach((l: string) => console.log(chalk.gray(l)));
+    }
     process.exit(1);
   }
 }
 
-// Run the test
 testRepay();

@@ -15,7 +15,7 @@ pub const COMP_DEF_OFFSET_WITHDRAW: u32 = comp_def_offset("withdraw");
 pub const COMP_DEF_OFFSET_BORROW: u32 = comp_def_offset("borrow");
 pub const COMP_DEF_OFFSET_REPAY: u32 = comp_def_offset("repay");
 
-declare_id!("AgswW8vXd2CnG269md9rP8vXYGC3qohqshc9qqz43Tui");
+declare_id!("FpHChpheLnvPS9Qd7DyXwSrvSc3KCELkx4BC5MTE8T7k");
 
 #[arcium_program]
 pub mod shadowlend_program {

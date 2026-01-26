@@ -101,14 +101,19 @@ async function testBorrow() {
     const borrowAmount = new BN(500_000); // 5000 units
     const computationOffset = generateComputationOffset();
 
-    // Generate valid X25519 keypair for Arcium context
-    const { publicKey: x25519PubDer } = generateKeyPairSync("x25519", {
-        publicKeyEncoding: { format: "der", type: "spki" },
-        privateKeyEncoding: { format: "der", type: "pkcs8" }
-    });
-    const x25519PubBytes = x25519PubDer as Buffer; 
-    const userPubkey = Array.from(x25519PubBytes.subarray(x25519PubBytes.length - 32));
-    const userNonce = new BN(Date.now()).mul(new BN(1000000)); // u128
+    // Use persistent X25519 keypair for Arcium context
+    const { getOrCreateX25519Key } = await import("../utils/keys");
+    const { publicKey: userPubkeyBytes } = getOrCreateX25519Key();
+    const userPubkey = Array.from(userPubkeyBytes);
+    // Determine deterministic nonce
+    let userNonce = new BN(0);
+    try {
+        const acc = await (program.account as any).userObligation.fetch(userObligation);
+        userNonce = acc.stateNonce;
+        logInfo(`Using stateNonce: ${userNonce.toString()}`);
+    } catch (e) {
+        logInfo("User Obligation not initialized. Using nonce: 0");
+    }
 
     // Verify MXE State
     const isMxeReady = await checkMxeKeysSet(provider, programId);
@@ -175,20 +180,105 @@ async function testBorrow() {
      // User collateral ATA
     const userCollateralAccount = await getAssociatedTokenAddress(collateralMint, wallet.publicKey);
 
-    // Ensure User Collateral ATA exists and has funds
+    // Load Admin Wallet (for funding)
+    const adminPath = require("path").join(process.env.HOME || "", ".config/solana/id.json");
+    const { loadKeypair } = require("../utils/deployment");
+    let adminWallet;
     try {
-        const userAta = await getAccount(provider.connection, userCollateralAccount);
-        if (userAta.amount < BigInt(depositAmount.toString())) {
-             logWarning("User lacks tokens for deposit. Minting...");
-             await mintTo(provider.connection, wallet.payer, collateralMint, userCollateralAccount, wallet.payer, 5_000_000);
+        adminWallet = loadKeypair(adminPath);
+        logEntry("Admin Wallet", adminWallet.publicKey.toBase58(), icons.key);
+    } catch (e) {
+        logWarning("Could not load Admin Wallet. Funding might fail if User/Vault needs tokens.");
+        // Fallback to wallet if admin not found (though unlikely to work for minting)
+        adminWallet = wallet.payer; 
+    }
+
+    // Helper to fund account
+    const fundAccount = async (targetAta: PublicKey, targetAmount: bigint, mint: PublicKey) => {
+        try {
+            const currentObj = await getAccount(provider.connection, targetAta);
+            if (currentObj.amount >= targetAmount) {
+                // logInfo(`Account ${targetAta.toBase58()} has sufficient funds (${currentObj.amount}).`);
+                return; 
+            }
+            
+            const shortfall = targetAmount - currentObj.amount;
+            logInfo(`Funding ${targetAta.toBase58()} with ${shortfall} tokens...`);
+            
+            // Handle Native Mint (wSOL)
+            if (mint.toBase58() === "So11111111111111111111111111111111111111112") {
+                 logInfo("Detected Native Mint (wSOL). transfering SOL and syncing...");
+                 const solShortfall = shortfall; // 1:1 for wSOL
+                 
+                 // Transfer SOL to the ATA
+                 const tx = new (await import("@solana/web3.js")).Transaction().add(
+                     SystemProgram.transfer({
+                         fromPubkey: adminWallet.publicKey,
+                         toPubkey: targetAta,
+                         lamports: Number(solShortfall)
+                     }),
+                     (await import("@solana/spl-token")).createSyncNativeInstruction(targetAta)
+                 );
+                 
+                 await provider.sendAndConfirm(tx, [adminWallet]);
+                 logSuccess("Funded wSOL successfully.");
+                 return;
+            }
+
+            // Regular SPL Token Logic
+            // 1. Check Admin Balance
+            const adminAta = await getAssociatedTokenAddress(mint, adminWallet.publicKey);
+            let adminBalance = 0n;
+            try {
+                const adminAcc = await getAccount(provider.connection, adminAta);
+                adminBalance = adminAcc.amount;
+            } catch(e) {
+                // Admin ATA missing, create it
+                 await provider.sendAndConfirm(new (await import("@solana/web3.js")).Transaction().add(
+                    createAssociatedTokenAccountInstruction(adminWallet.publicKey, adminAta, adminWallet.publicKey, mint)
+                ), [adminWallet]);
+            }
+            
+            // 2. Mint to Admin if needed (Admin is likely Mint Authority)
+            if (adminBalance < shortfall) {
+                logInfo("Admin lacks tokens. Minting to Admin...");
+                try {
+                     await mintTo(provider.connection, adminWallet, mint, adminAta, adminWallet, Number(shortfall + 10_000_000n)); // Mint extra
+                } catch(e) {
+                     logWarning(`Failed to mint to admin: ${e}`);
+                }
+            }
+            
+            // 3. Transfer to Target
+            const { transfer } = await import("@solana/spl-token");
+            await transfer(
+                provider.connection,
+                adminWallet, // Payer
+                adminAta, // Source
+                targetAta, // Dest
+                adminWallet, // Owner
+                Number(shortfall)
+            );
+            logSuccess("Funding complete.");
+            
+        } catch (e) {
+            logError("Funding failed", e);
+            throw e;
         }
+    };
+
+    // Ensure User Collateral ATA exists
+    try {
+        await getAccount(provider.connection, userCollateralAccount);
     } catch {
-        logWarning("Creating User Collateral ATA...");
+        logInfo("Creating User Collateral ATA...");
         await provider.sendAndConfirm(new (await import("@solana/web3.js")).Transaction().add(
              createAssociatedTokenAccountInstruction(wallet.publicKey, userCollateralAccount, wallet.publicKey, collateralMint)
         ));
-        await mintTo(provider.connection, wallet.payer, collateralMint, userCollateralAccount, wallet.payer, 5_000_000);
     }
+    
+    // Fund User
+    await fundAccount(userCollateralAccount, BigInt(depositAmount.toString()), collateralMint);
     
     logInfo(`Depositing ${depositAmount.toString()}...`);
     
@@ -267,26 +357,14 @@ async function testBorrow() {
     // FUND BORROW VAULT IF EMPTY
     try {
         const mintInfo = await (await import("@solana/spl-token")).getMint(provider.connection, borrowMint);
-        const decimals = mintInfo.decimals;
-        logEntry("Mint Decimals", decimals.toString(), icons.info);
+        logEntry("Mint Decimals", mintInfo.decimals.toString(), icons.info);
 
-        const vaultAccount = await getAccount(provider.connection, borrowVault);
-        const vaultParams = BigInt(borrowAmount.toString());
-        
-        // Ensure vault has PLENTY of tokens (suggested by user)
-        // We'll mint 10 billion units just to be safe.
         const targetVaultBalance = 10_000_000_000n; 
         
-        if (vaultAccount.amount < targetVaultBalance) {
-             logInfo(`Funding borrow vault to ${targetVaultBalance} units...`);
-             await mintTo(provider.connection, wallet.payer, borrowMint, borrowVault, wallet.payer, targetVaultBalance);
-             
-             // Verify
-             const newVault = await getAccount(provider.connection, borrowVault);
-             logEntry("Vault Balance (Funded)", newVault.amount.toString(), icons.checkmark);
-        } else {
-             logEntry("Vault Balance", vaultAccount.amount.toString(), icons.checkmark);
-        }
+        // Ensure Vault ATA exists (It should, from init_pool)
+        // Fund it
+        await fundAccount(borrowVault, targetVaultBalance, borrowMint);
+
     } catch (e) {
         logError("Failed to fund vault", e);
     }

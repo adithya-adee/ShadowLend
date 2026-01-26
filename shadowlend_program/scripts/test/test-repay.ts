@@ -83,13 +83,18 @@ async function testRepay() {
     const clockAccount = getClockAccAddress();
     const arciumProgramId = getArciumProgramId();
 
-    const { publicKey: x25519PubDer } = generateKeyPairSync("x25519", {
-        publicKeyEncoding: { format: "der", type: "spki" },
-        privateKeyEncoding: { format: "der", type: "pkcs8" }
-    });
-    const x25519PubBytes = x25519PubDer as Buffer; 
-    const userPubkey = Array.from(x25519PubBytes.subarray(x25519PubBytes.length - 32));
-    const userNonce = new BN(Date.now()).mul(new BN(1000000));
+    const { getOrCreateX25519Key } = await import("../utils/keys");
+    const { publicKey: userPubkeyBytes } = getOrCreateX25519Key();
+    const userPubkey = Array.from(userPubkeyBytes);
+    // Determine deterministic nonce
+    let userNonce = new BN(0);
+    try {
+        const acc = await (program.account as any).userObligation.fetch(userObligation);
+        userNonce = acc.stateNonce;
+        logInfo(`Using stateNonce: ${userNonce.toString()}`);
+    } catch (e) {
+        logInfo("User Obligation not initialized. Using nonce: 0");
+    }
 
     // Verify Obligation
     let obligationAccount;
@@ -141,35 +146,54 @@ async function testRepay() {
     const compDefAccount = getCompDefAccAddress(programId, compDefOffset);
 
     // Call Repay
-    const tx = await program.methods.repay(
-        computationOffset,
-        repayAmount,
-        userPubkey,
-        userNonce
-    ).accountsPartial({
-        payer: wallet.publicKey,
-        signPdaAccount,
-        mxeAccount,
-        mempoolAccount,
-        executingPool,
-        computationAccount: getComputationAccAddress(config.arciumClusterOffset, computationOffset),
-        compDefAccount,
-        clusterAccount,
-        poolAccount,
-        clockAccount,
-        pool: poolPda,
-        userObligation,
-        borrowMint,
-        userTokenAccount,
-        borrowVault,
-        tokenProgram: TOKEN_PROGRAM_ID,
-        associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
-        systemProgram: SystemProgram.programId,
-        arciumProgram: arciumProgramId,
-    }).rpc();
+    let txSig = "";
+    try {
+        const tx = await program.methods.repay(
+            computationOffset,
+            repayAmount,
+            userPubkey,
+            userNonce
+        ).accountsPartial({
+            payer: wallet.publicKey,
+            signPdaAccount,
+            mxeAccount,
+            mempoolAccount,
+            executingPool,
+            computationAccount: getComputationAccAddress(config.arciumClusterOffset, computationOffset),
+            compDefAccount,
+            clusterAccount,
+            poolAccount,
+            clockAccount,
+            pool: poolPda,
+            userObligation,
+            borrowMint,
+            userTokenAccount,
+            borrowVault,
+            tokenProgram: TOKEN_PROGRAM_ID,
+            associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+            systemProgram: SystemProgram.programId,
+            arciumProgram: arciumProgramId,
+        }).rpc();
 
-    logSuccess("Repay transaction submitted!");
-    logEntry("Signature", tx, icons.rocket);
+        txSig = tx;
+        logSuccess("Repay transaction submitted!");
+        logEntry("Signature", tx, icons.rocket);
+        
+        // Immediate Vault Check
+        const postVaultBalance = (await getAccount(provider.connection, borrowVault)).amount;
+        const expectedVaultBalance = BigInt(preVaultBalance) + BigInt(repayAmount.toString());
+        
+        if (postVaultBalance === expectedVaultBalance) {
+            logSuccess(`Vault balance increased by ${repayAmount.toString()} (Matches expected).`);
+        } else {
+             logError(`Vault balance mismatch! Expected: ${expectedVaultBalance}, Found: ${postVaultBalance}`);
+             throw new Error("Vault balance did not increase correctly in repay transaction.");
+        }
+        
+    } catch (e: any) {
+        if (txSig) logEntry("Failed Transaciton", txSig, icons.cross);
+        throw e;
+    }
 
     // Poll for state update
     logInfo("Polling for state update...");

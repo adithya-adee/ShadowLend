@@ -138,19 +138,21 @@ async function testDeposit() {
     const computationOffset = generateComputationOffset();
 
     // Generate encryption parameters (X25519 keypair for encryption)
-    // We use Node's crypto library to generate a proper X25519 keypair
-    const { publicKey: x25519PubDer } = generateKeyPairSync("x25519", {
-        publicKeyEncoding: { format: "der", type: "spki" },
-        privateKeyEncoding: { format: "der", type: "pkcs8" }
-    });
+    // Generate encryption parameters (X25519 keypair for encryption)
+    // We use a persistent keypair to enable state inspection later
+    const { getOrCreateX25519Key } = await import("../utils/keys");
+    const { publicKey: userPubkeyBytes } = getOrCreateX25519Key();
+    const userPubkey = Array.from(userPubkeyBytes);
 
-    // Extract raw 32 bytes from DER SPKI
-    // The key is returned as a Buffer because we specified encoding
-    const x25519PubBytes = x25519PubDer as Buffer; 
-    const userPubkey = Array.from(x25519PubBytes.subarray(x25519PubBytes.length - 32));
-
-    // Convert to BN for proper serialization (u128 in Rust)
-    const userNonce = new BN(Date.now()).mul(new BN(1000000));
+    // Determine deterministic nonce for encryption (to enable decryption later)
+    let userNonce = new BN(0);
+    try {
+        const acc = await (program.account as any).userObligation.fetch(userObligation);
+        userNonce = acc.stateNonce;
+        logInfo(`Found existing Obligation. Using stateNonce: ${userNonce.toString()}`);
+    } catch (e) {
+        logInfo("User Obligation not initialized. Using nonce: 0");
+    }
 
     logSection("Deposit Parameters");
     logEntry("Amount", depositAmount.toString(), icons.arrow);
@@ -231,11 +233,23 @@ async function testDeposit() {
     const clockAccount = getClockAccAddress();
     const arciumProgramId = getArciumProgramId();
 
+    // Check initial vault balance
+    logInfo("Verifying initial vault balance...");
+    let initialVaultBalance = new BN(0);
+    try {
+        const vaultInfo = await provider.connection.getTokenAccountBalance(collateralVault);
+        initialVaultBalance = new BN(vaultInfo.value.amount);
+        logEntry("Initial Vault Balance", initialVaultBalance.toString(), icons.info);
+    } catch (e) {
+        logInfo("Vault token account likely empty or not created yet.");
+    }
+
     logDivider();
     logInfo("Executing deposit transaction...");
     logInfo("This sends the request to Arcium nodes...");
 
     // Execute deposit instruction
+    let txSig = "";
     try {
       const tx = await program.methods
         .deposit(
@@ -267,12 +281,29 @@ async function testDeposit() {
         })
         .rpc();
 
+      txSig = tx;
       logSuccess("Transaction submitted!");
       logEntry("Signature", tx, icons.rocket);
 
       // Log Explorer URL
       logSuccess("Transaction confirmed on-chain!");
       logEntry("Explorer", `https://explorer.solana.com/tx/${tx}?cluster=devnet`, icons.link);
+
+      // Post-transaction vault check (Immediate transfer)
+      logInfo("Verifying post-deposit vault balance...");
+      const postVaultInfo = await provider.connection.getTokenAccountBalance(collateralVault);
+      const postVaultBalance = new BN(postVaultInfo.value.amount);
+      logEntry("Post Vault Balance", postVaultBalance.toString(), icons.info);
+
+      const expectedBalance = initialVaultBalance.add(depositAmount);
+      if (postVaultBalance.eq(expectedBalance)) {
+          logSuccess(`Vault balance increased by ${depositAmount.toString()} (Matches expected).`);
+      } else {
+          logError(`Vault balance mismatch! Expected: ${expectedBalance.toString()}, Found: ${postVaultBalance.toString()}`);
+          throw new Error("Vault balance did not increase correctly in deposit transaction.");
+      }
+
+
 
       // Wait for MPC computation to finalize (Polling)
       logDivider();
@@ -389,33 +420,17 @@ async function testDeposit() {
             icons.key
         );
         
-        // Verify Collateral Vault Balance
-        logDivider();
-        logInfo("Verifying Vault Balance...");
-        const vaultTokenAccount = await getAccount(provider.connection, collateralVault);
-        const vaultBalance = vaultTokenAccount.amount;
-        logEntry("Vault Balance", vaultBalance.toString(), icons.key);
-        
-        if (new BN(vaultBalance.toString()).eq(depositAmount)) {
-             logSuccess(`Vault received exactly ${depositAmount.toString()} tokens.`);
-             logEntry("Verification", "Passed", icons.checkmark);
-        } else if (vaultTokenAccount.amount > 0n) {
-             logSuccess(`Vault has tokens (Balance: ${vaultBalance.toString()}). Transfer worked.`);
-             logEntry("Verification", "Passed (Non-zero)", icons.checkmark);
-        } else {
-             logError(`Vault is empty! Expected at least ${depositAmount.toString()}.`);
-             logEntry("Verification", "Failed", icons.cross);
-             throw new Error("Collateral vault did not receive tokens.");
-        }
-
       } catch (error) {
-        logError("Failed to decode obligation account data or fetch vault balance", error);
+        logError("Failed to decode obligation account data", error);
         throw error;
       }
       logDivider();
 
     } catch (error: any) {
       logError("Deposit transaction failed", error);
+      if (txSig) {
+          logEntry("Failed Transaction Signature", txSig, icons.cross);
+      }
       
       if (error.logs) {
         logSection("Transaction Logs");

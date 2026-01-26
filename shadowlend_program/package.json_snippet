@@ -1,0 +1,1 @@
+scripts.view:profile = 'ts-node scripts/client/view-profile.ts'

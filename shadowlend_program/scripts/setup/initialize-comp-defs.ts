@@ -15,7 +15,7 @@ import {
   logDivider,
   logWarning,
   icons,
-  loadProgram
+  loadProgram,
 } from "../utils/config";
 import {
   getMxeAccount,
@@ -48,9 +48,8 @@ async function initializeComputationDefinitions() {
     // Load deployment
     const deployment = loadDeployment();
     if (!deployment || !deployment.programId) {
-      throw new Error("Program ID not found in deployment.json");
+      throw new Error("Program ID not found. Check .env or deployment.json");
     }
-
     const programId = new PublicKey(deployment.programId);
     logEntry("Program ID", programId.toBase58(), icons.folder);
 
@@ -73,9 +72,9 @@ async function initializeComputationDefinitions() {
     // Circuit configuration
     const circuits = [
       { name: "deposit", method: "initDepositCompDef" },
-      // { name: "withdraw", method: "initWithdrawCompDef" },
-      // { name: "borrow", method: "initBorrowCompDef" },
-      // { name: "repay", method: "initRepayCompDef" },
+      { name: "withdraw", method: "initWithdrawCompDef" },
+      { name: "borrow", method: "initBorrowCompDef" },
+      { name: "repay", method: "initRepayCompDef" },
     ];
     
     const computationDefinitions: Record<string, string> = {};

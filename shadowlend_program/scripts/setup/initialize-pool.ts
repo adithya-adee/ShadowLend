@@ -64,9 +64,19 @@ async function initializePool() {
     const ltvBps = 7500; // 75% LTV
     const liquidationThreshold = 8000; // 80% liquidation threshold
 
-    // Token mints - using common devnet tokens
-    const collateralMint = new PublicKey("4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"); // USDC devnet
-    const borrowMint = new PublicKey("So11111111111111111111111111111111111111112"); // Wrapped SOL
+    // Token mints
+    let collateralMint: PublicKey;
+    let borrowMint: PublicKey;
+
+    if (deployment.collateralMint && deployment.borrowMint) {
+        collateralMint = new PublicKey(deployment.collateralMint);
+        borrowMint = new PublicKey(deployment.borrowMint);
+        logInfo("Using mints from deployment.json");
+    } else {
+        collateralMint = new PublicKey("4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"); // USDC devnet
+        borrowMint = new PublicKey("So11111111111111111111111111111111111111112"); // Wrapped SOL
+        logInfo("Using default Devnet mints");
+    }
 
     logSection("Pool Parameters");
     logEntry("Collateral Mint (USDC)", collateralMint.toBase58(), icons.key);

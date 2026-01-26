@@ -1,10 +1,12 @@
 import {
   getMXEAccAddress,
   getArciumProgram,
+  getMXEPublicKey
 } from "@arcium-hq/client";
 import { PublicKey } from "@solana/web3.js";
 import { AnchorProvider, BN } from "@coral-xyz/anchor";
 import { getNetworkConfig } from "./config";
+import crypto from "crypto";
 
 /**
  * Get MXE account address for a program
@@ -37,26 +39,26 @@ export async function checkMxeInitialized(
  */
 export async function checkMxeKeysSet(
   provider: AnchorProvider,
-  programId: PublicKey
+  programId: PublicKey,
+  maxRetries: number = 10,
+  retryDelayMs: number = 500
 ): Promise<boolean> {
-  try {
-    const mxeAccount = getMXEAccAddress(programId);
-    
-    // Try to fetch the MXE account data
-    const accountInfo = await provider.connection.getAccountInfo(mxeAccount);
-    
-    if (!accountInfo || !accountInfo.data) {
-      return false;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const mxePublicKey = await getMXEPublicKey(provider, programId);
+      if (mxePublicKey) {
+        return true;
+      }
+    } catch (error) {
+      // Continue to next attempt
     }
-    
-    // MXE is considered initialized with keys if the account exists and has data
-    // The actual key data structure depends on Arcium SDK version
-    // For now, we check if the account has sufficient data
-    return accountInfo.data.length > 100; // MXE account with keys should have substantial data
-  } catch (error) {
-    console.error("Error checking MXE keys:", error);
-    return false;
+
+    if (attempt < maxRetries) {
+      await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+    }
   }
+
+  return false;
 }
 
 /**
@@ -106,6 +108,7 @@ export async function waitForMxeKeys(
  * @param pollIntervalMs - Polling interval in milliseconds (default: 2000 = 2 seconds)
  * @returns True when computation is finalized
  */
+// No changes made.
 export async function waitForComputationFinalization(
   provider: AnchorProvider,
   computationOffset: BN,

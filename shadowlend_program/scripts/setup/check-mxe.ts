@@ -10,7 +10,7 @@ import {
   logError,
   logInfo,
   logDivider,
-  icons
+  icons,
 } from "../utils/config";
 import {
   getMxeAccount,
@@ -42,7 +42,7 @@ async function checkMxe() {
     // Load deployment to get program ID
     const deployment = loadDeployment();
     if (!deployment || !deployment.programId) {
-      throw new Error("Program ID not found in deployment.json. Please deploy the program first.");
+      throw new Error("Program ID not found. Check .env or deployment.json");
     }
     
     const programId = new PublicKey(deployment.programId);
@@ -51,6 +51,8 @@ async function checkMxe() {
     // Check MXE initialization
     logSection("Initialization Status");
     logInfo("Checking MXE initialization...");
+    
+    // Check if the account exists first to avoid errors
     const mxeInitialized = await checkMxeInitialized(provider, programId);
 
     if (!mxeInitialized) {
@@ -69,7 +71,10 @@ async function checkMxe() {
     // Check MXE keys (DKG status)
     logSection("Key Generation (DKG) Status");
     logInfo("Checking MXE keys...");
-    const keysSet = await checkMxeKeysSet(provider, programId);
+    
+    // We can assume checkMxeKeysSet from utils handles the fetching of keys safely 
+    // but verify it doesn't throw if keys are missing (it swallows errors)
+    const keysSet = await checkMxeKeysSet(provider, programId, 1, 0);
 
     if (!keysSet) {
       logError("MXE keys are NOT set (DKG not complete)");
@@ -78,8 +83,8 @@ async function checkMxe() {
       console.log("     This means MPC computations will NOT work yet.");
       logDivider();
       logInfo(" To fix:");
-      console.log("     - Wait a few minutes and run this script again");
-      console.log("     - Check Arcium cluster logs");
+      console.log("     - Wait a few minutes and check again");
+      console.log("     - Run: arcium mxe heartbeat"); 
       process.exit(1);
     }
 
@@ -90,7 +95,7 @@ async function checkMxe() {
     logEntry("Cluster Offset", config.arciumClusterOffset.toString(), icons.info);
     logEntry("MXE Account", mxeAccount.toBase58(), icons.key);
     logEntry("Program ID", programId.toBase58(), icons.folder);
-    
+
     // Fetch account data to show size
     try {
       const accountInfo = await provider.connection.getAccountInfo(mxeAccount);

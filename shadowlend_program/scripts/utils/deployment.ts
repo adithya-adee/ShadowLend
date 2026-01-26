@@ -1,6 +1,7 @@
 import { Keypair } from "@solana/web3.js";
 import * as fs from "fs";
 import * as path from "path";
+import { PROGRAM_ID } from "./config";
 
 /**
  * Deployment state interface
@@ -27,15 +28,30 @@ const DEPLOYMENT_FILE = path.join(__dirname, "../../deployment.json");
  * Load deployment state from file
  */
 export function loadDeployment(): DeploymentState | null {
+  let state: DeploymentState | null = null;
   try {
     if (fs.existsSync(DEPLOYMENT_FILE)) {
       const data = fs.readFileSync(DEPLOYMENT_FILE, "utf-8");
-      return JSON.parse(data);
+      state = JSON.parse(data);
     }
   } catch (error) {
     console.warn("Failed to load deployment state:", error);
   }
-  return null;
+
+  // Allow environment to override or define program ID
+  if (PROGRAM_ID) {
+    if (!state) {
+      state = {
+        network: process.env.NETWORK || "devnet",
+        programId: PROGRAM_ID,
+        timestamp: new Date().toISOString(),
+      };
+    } else {
+      state.programId = PROGRAM_ID;
+    }
+  }
+
+  return state;
 }
 
 /**

@@ -21,7 +21,7 @@ export const NETWORKS: Record<string, NetworkConfig> = {
   localnet: {
     name: "localnet",
     rpcUrl: "http://127.0.0.1:8899",
-    arciumClusterOffset: 0, // Update based on local Arcium setup
+    arciumClusterOffset: parseInt(process.env.ARCIUM_CLUSTER_OFFSET || "1"), // Update based on local Arcium setup
   },
   devnet: {
     name: "devnet",
@@ -29,6 +29,8 @@ export const NETWORKS: Record<string, NetworkConfig> = {
     arciumClusterOffset: 456, // Current devnet cluster offset
   },
 };
+
+export const PROGRAM_ID = process.env.PROGRAM_ID;
 
 /**
  * Get network configuration from environment or default to devnet

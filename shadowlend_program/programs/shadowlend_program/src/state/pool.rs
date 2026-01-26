@@ -18,6 +18,12 @@ pub struct Pool {
     /// Liquidation threshold in basis points (8500 = 85%)
     pub liquidation_threshold: u16,
 
+    /// Total deposits in the pool (tracked for utilization)
+    pub total_deposits: u64,
+
+    /// Total borrows from the pool
+    pub total_borrows: u64,
+
     /// PDA bump seed
     pub bump: u8,
 }

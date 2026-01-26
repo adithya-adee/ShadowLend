@@ -37,6 +37,7 @@ pub struct WithdrawCallback<'info> {
     pub user_obligation: Box<Account<'info, UserObligation>>,
 
     #[account(
+        mut,
         seeds = [Pool::SEED_PREFIX],
         bump = pool.bump
     )]

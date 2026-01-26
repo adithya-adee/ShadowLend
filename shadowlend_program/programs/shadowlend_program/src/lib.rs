@@ -217,6 +217,10 @@ pub mod shadowlend_program {
                 amount,
                 user_obligation.state_nonce
             );
+
+            // Update global borrows
+            let pool = &mut ctx.accounts.pool;
+            pool.total_borrows = pool.total_borrows.checked_add(amount).ok_or(ErrorCode::MathOverflow)?;
         } else {
             msg!("Borrow rejected by health check (approved=0)");
         }
@@ -305,6 +309,10 @@ pub mod shadowlend_program {
             )?;
 
             msg!("Withdraw approved, transferred {} tokens", amount);
+
+            // Update global deposit counter
+            let pool = &mut ctx.accounts.pool;
+            pool.total_deposits = pool.total_deposits.checked_sub(amount).unwrap_or(0);
         } else {
             msg!("Withdraw rejected by health check");
         }

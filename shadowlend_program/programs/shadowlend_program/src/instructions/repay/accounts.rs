@@ -65,6 +65,7 @@ pub struct Repay<'info> {
     pub clock_account: Box<Account<'info, ClockAccount>>,
 
     #[account(
+        mut,
         seeds = [Pool::SEED_PREFIX],
         bump = pool.bump
     )]

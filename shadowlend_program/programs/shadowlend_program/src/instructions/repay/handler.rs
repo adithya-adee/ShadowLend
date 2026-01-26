@@ -36,6 +36,10 @@ pub fn repay_handler(
         amount,
     )?;
 
+    // Update global borrow counter
+    let pool = &mut ctx.accounts.pool;
+    pool.total_borrows = pool.total_borrows.checked_sub(amount).unwrap_or(0);
+
     let user_obligation = &ctx.accounts.user_obligation;
 
     let mut args = ArgBuilder::new()

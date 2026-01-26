@@ -11,7 +11,7 @@ pub struct InitializePool<'info> {
     #[account(
         init,
         payer = authority,
-        space = 8 + 32 + 32 + 32 + 2 + 2 + 1,
+        space = 8 + 32 + 32 + 32 + 2 + 2 + 8 + 8 + 1,
         seeds = [Pool::SEED_PREFIX],
         bump
     )]

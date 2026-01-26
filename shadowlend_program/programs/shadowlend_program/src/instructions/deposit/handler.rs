@@ -70,6 +70,10 @@ pub fn deposit_handler(
         amount,
     )?;
 
+    // Update global deposit counter
+    let pool = &mut ctx.accounts.pool;
+    pool.total_deposits = pool.total_deposits.checked_add(amount).ok_or(ErrorCode::MathOverflow)?;
+
     queue_computation(
         ctx.accounts,
         computation_offset,

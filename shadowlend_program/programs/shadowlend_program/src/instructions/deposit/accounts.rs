@@ -31,7 +31,7 @@ pub struct Deposit<'info> {
         mut,
         address = derive_mempool_pda!(mxe_account, ErrorCode::ClusterNotSet)
     )]
-    /// CHECK: mempool_account, checked by the arcium program.
+    /// CHECK: mempool_acBorrowcount, checked by the arcium program.
     pub mempool_account: UncheckedAccount<'info>,
     #[account(
         mut,

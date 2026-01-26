@@ -9,7 +9,7 @@ use crate::{ArciumSignerAccount, COMP_DEF_OFFSET_REPAY, ID, ID_CONST};
 
 #[queue_computation_accounts("repay", payer)]
 #[derive(Accounts)]
-#[instruction(computation_offset: u64, amount: u64)]
+#[instruction(computation_offset: u64, amount: u64, user_pubkey: [u8; 32], user_nonce: u128)]
 pub struct Repay<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,

@@ -19,6 +19,8 @@ pub fn withdraw_handler(
     ctx: Context<Withdraw>,
     computation_offset: u64,
     amount: u64,
+    user_pubkey: [u8; 32],
+    user_nonce: u128,
 ) -> Result<()> {
     require!(amount > 0, ErrorCode::InvalidAmount);
 
@@ -26,7 +28,10 @@ pub fn withdraw_handler(
     let pool = &ctx.accounts.pool;
     let ltv_bps = pool.ltv_bps as u64;
 
-    let mut args = ArgBuilder::new().plaintext_u64(amount);
+    let mut args = ArgBuilder::new()
+        .plaintext_u64(amount)
+        .x25519_pubkey(user_pubkey)
+        .plaintext_u128(user_nonce);
 
     // Offset 72 = 8 (discriminator) + 32 (user) + 32 (pool)
     args = if user_obligation.encrypted_deposit != [0u8; 32] {
@@ -36,6 +41,7 @@ pub fn withdraw_handler(
     };
 
     // Offset 104 = 72 + 32 (encrypted_deposit)
+    args = args.x25519_pubkey(user_pubkey).plaintext_u128(user_nonce);
     args = if user_obligation.encrypted_borrow != [0u8; 32] {
         args.account(user_obligation.key(), 104u32, 32u32)
     } else {
@@ -43,6 +49,20 @@ pub fn withdraw_handler(
     };
 
     args = args.plaintext_u64(ltv_bps);
+
+    // Add is_collateral_initialized flag
+    args = if user_obligation.encrypted_deposit != [0u8; 32] {
+        args.plaintext_u8(1)
+    } else {
+        args.plaintext_u8(0)
+    };
+
+    // Add is_borrow_initialized flag
+    args = if user_obligation.encrypted_borrow != [0u8; 32] {
+        args.plaintext_u8(1)
+    } else {
+        args.plaintext_u8(0)
+    };
 
     ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
 

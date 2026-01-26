@@ -16,7 +16,13 @@ use arcium_client::idl::arcium::types::CallbackAccount;
 /// * `ctx` - Anchor context with repay accounts
 /// * `computation_offset` - Unique identifier for this Arcium computation
 /// * `amount` - Token amount to repay (must be > 0)
-pub fn repay_handler(ctx: Context<Repay>, computation_offset: u64, amount: u64) -> Result<()> {
+pub fn repay_handler(
+    ctx: Context<Repay>,
+    computation_offset: u64,
+    amount: u64,
+    user_pubkey: [u8; 32],
+    user_nonce: u128,
+) -> Result<()> {
     require!(amount > 0, ErrorCode::InvalidAmount);
 
     let transfer_cpi = Transfer {
@@ -32,13 +38,19 @@ pub fn repay_handler(ctx: Context<Repay>, computation_offset: u64, amount: u64) 
 
     let user_obligation = &ctx.accounts.user_obligation;
 
-    let mut args = ArgBuilder::new().plaintext_u64(amount);
+    let mut args = ArgBuilder::new()
+        .plaintext_u64(amount)
+        .x25519_pubkey(user_pubkey)
+        .plaintext_u128(user_nonce);
 
+    // Offset 104 = 8 (discriminator) + 32 (user) + 32 (pool) + 32 (encrypted_deposit)
     // Offset 104 = 8 (discriminator) + 32 (user) + 32 (pool) + 32 (encrypted_deposit)
     args = if user_obligation.encrypted_borrow != [0u8; 32] {
         args.account(user_obligation.key(), 104u32, 32u32)
+            .plaintext_u8(1)
     } else {
         args.encrypted_u128([0u8; 32])
+            .plaintext_u8(0)
     };
 
     ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;

@@ -15,7 +15,7 @@ pub const COMP_DEF_OFFSET_WITHDRAW: u32 = comp_def_offset("withdraw");
 pub const COMP_DEF_OFFSET_BORROW: u32 = comp_def_offset("borrow");
 pub const COMP_DEF_OFFSET_REPAY: u32 = comp_def_offset("repay");
 
-declare_id!("wQPJWnqgWYwQCgU8CqWC8kn9yagmgPZ7TTF8LVkFakJ");
+declare_id!("AgswW8vXd2CnG269md9rP8vXYGC3qohqshc9qqz43Tui");
 
 #[arcium_program]
 pub mod shadowlend_program {
@@ -80,11 +80,17 @@ pub mod shadowlend_program {
         ctx: Context<DepositCallback>,
         output: SignedComputationOutputs<DepositOutput>,
     ) -> Result<()> {
+        msg!("Deposit callback START");
+        msg!("Callback context loaded. Verifying output...");
+
         let result = match output.verify_output(
             &ctx.accounts.cluster_account,
             &ctx.accounts.computation_account,
         ) {
-            Ok(DepositOutput { field_0 }) => field_0,
+            Ok(DepositOutput { field_0 }) => {
+                msg!("Output verified successfully.");
+                field_0
+            },
             Err(e) => {
                 msg!("Deposit verification failed: {}", e);
                 return Err(ErrorCode::AbortedComputation.into());
@@ -92,10 +98,12 @@ pub mod shadowlend_program {
         };
 
         let user_obligation = &mut ctx.accounts.user_obligation;
+        msg!("Updating user obligation. Old nonce: {}", user_obligation.state_nonce);
+        
         user_obligation.encrypted_deposit = result.ciphertexts[0];
         user_obligation.state_nonce += 1;
 
-        msg!("Deposit callback completed");
+        msg!("Deposit callback completed. New nonce: {}", user_obligation.state_nonce);
         Ok(())
     }
 
@@ -107,8 +115,20 @@ pub mod shadowlend_program {
     /// # Arguments
     /// * `computation_offset` - Unique identifier for this Arcium computation
     /// * `amount` - Token amount to borrow
-    pub fn borrow(ctx: Context<Borrow>, computation_offset: u64, amount: u64) -> Result<()> {
-        crate::instructions::borrow_handler(ctx, computation_offset, amount)
+    pub fn borrow(
+        ctx: Context<Borrow>,
+        computation_offset: u64,
+        amount: u64,
+        user_pubkey: [u8; 32],
+        user_nonce: u128,
+    ) -> Result<()> {
+        crate::instructions::borrow_handler(
+            ctx,
+            computation_offset,
+            amount,
+            user_pubkey,
+            user_nonce,
+        )
     }
 
     /// Callback invoked by Arcium MXE after borrow health check completes.
@@ -123,11 +143,17 @@ pub mod shadowlend_program {
         ctx: Context<BorrowCallback>,
         output: SignedComputationOutputs<BorrowOutput>,
     ) -> Result<()> {
+        msg!("Borrow callback START");
+        msg!("Callback context loaded. Verifying output...");
+
         let result = match output.verify_output(
             &ctx.accounts.cluster_account,
             &ctx.accounts.computation_account,
         ) {
-            Ok(o) => o,
+            Ok(o) => {
+                msg!("Output verified successfully.");
+                o
+            },
             Err(e) => {
                 msg!("Borrow verification failed: {}", e);
                 return Err(ErrorCode::AbortedComputation.into());
@@ -136,10 +162,14 @@ pub mod shadowlend_program {
 
         let inner = result.field_0;
         let approved = inner.field_1;
-        let amount = inner.field_2;
+        let amount = inner.field_2; // Revealed amount from circuit
+
+        msg!("Circuit result - Approved: {}, Amount: {}", approved, amount);
 
         if approved == 1 {
             let user_obligation = &mut ctx.accounts.user_obligation;
+            msg!("Updating user obligation. Old nonce: {}", user_obligation.state_nonce);
+
             user_obligation.encrypted_borrow = inner.field_0.ciphertexts[0];
             user_obligation.state_nonce += 1;
 
@@ -158,6 +188,8 @@ pub mod shadowlend_program {
                 authority: ctx.accounts.borrow_vault.to_account_info(),
             };
 
+            msg!("Transferring {} tokens to user...", amount);
+
             token::transfer(
                 CpiContext::new_with_signer(
                     ctx.accounts.token_program.to_account_info(),
@@ -167,9 +199,9 @@ pub mod shadowlend_program {
                 amount,
             )?;
 
-            msg!("Borrow approved, transferred {} tokens", amount);
+            msg!("Borrow approved, transferred {} tokens. New nonce: {}", amount, user_obligation.state_nonce);
         } else {
-            msg!("Borrow rejected by health check");
+            msg!("Borrow rejected by health check (approved=0)");
         }
 
         Ok(())
@@ -183,8 +215,20 @@ pub mod shadowlend_program {
     /// # Arguments
     /// * `computation_offset` - Unique identifier for this Arcium computation
     /// * `amount` - Token amount to withdraw
-    pub fn withdraw(ctx: Context<Withdraw>, computation_offset: u64, amount: u64) -> Result<()> {
-        crate::instructions::withdraw_handler(ctx, computation_offset, amount)
+    pub fn withdraw(
+        ctx: Context<Withdraw>,
+        computation_offset: u64,
+        amount: u64,
+        user_pubkey: [u8; 32],
+        user_nonce: u128,
+    ) -> Result<()> {
+        crate::instructions::withdraw_handler(
+            ctx,
+            computation_offset,
+            amount,
+            user_pubkey,
+            user_nonce,
+        )
     }
 
     /// Callback invoked by Arcium MXE after withdraw health check completes.
@@ -259,8 +303,20 @@ pub mod shadowlend_program {
     /// # Arguments
     /// * `computation_offset` - Unique identifier for this Arcium computation
     /// * `amount` - Token amount to repay
-    pub fn repay(ctx: Context<Repay>, computation_offset: u64, amount: u64) -> Result<()> {
-        crate::instructions::repay_handler(ctx, computation_offset, amount)
+    pub fn repay(
+        ctx: Context<Repay>,
+        computation_offset: u64,
+        amount: u64,
+        user_pubkey: [u8; 32],
+        user_nonce: u128,
+    ) -> Result<()> {
+        crate::instructions::repay_handler(
+            ctx,
+            computation_offset,
+            amount,
+            user_pubkey,
+            user_nonce,
+        )
     }
 
     /// Callback invoked by Arcium MXE after repayment computation completes.

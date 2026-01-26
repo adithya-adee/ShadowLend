@@ -49,8 +49,10 @@ pub fn deposit_handler(
         // Offset 72 = 8 (discriminator) + 32 (user) + 32 (pool)
         args = if user_obligation.encrypted_deposit != [0u8; 32] {
             args.account(user_obligation_key, 72u32, 32u32)
+                .plaintext_u8(1)
         } else {
             args.encrypted_u128([0u8; 32])
+                .plaintext_u8(0)
         };
 
         args.build()

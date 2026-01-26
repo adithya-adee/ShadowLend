@@ -38,16 +38,20 @@ export function loadDeployment(): DeploymentState | null {
     console.warn("Failed to load deployment state:", error);
   }
 
-  // Allow environment to override or define program ID
-  if (PROGRAM_ID) {
+  // Allow environment to override or define program ID and Mints
+  if (PROGRAM_ID || process.env.COLLATERAL_MINT || process.env.BORROW_MINT) {
     if (!state) {
       state = {
         network: process.env.NETWORK || "devnet",
-        programId: PROGRAM_ID,
+        programId: PROGRAM_ID || "",
         timestamp: new Date().toISOString(),
+        collateralMint: process.env.COLLATERAL_MINT,
+        borrowMint: process.env.BORROW_MINT,
       };
     } else {
-      state.programId = PROGRAM_ID;
+      if (PROGRAM_ID) state.programId = PROGRAM_ID;
+      if (process.env.COLLATERAL_MINT) state.collateralMint = process.env.COLLATERAL_MINT;
+      if (process.env.BORROW_MINT) state.borrowMint = process.env.BORROW_MINT;
     }
   }
 

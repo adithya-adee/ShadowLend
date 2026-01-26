@@ -68,7 +68,12 @@ async function initializePool() {
     let collateralMint: PublicKey;
     let borrowMint: PublicKey;
 
-    if (deployment.collateralMint && deployment.borrowMint) {
+    // Prefer ENV, then Deployment, then generic defaults
+    if (process.env.COLLATERAL_MINT && process.env.BORROW_MINT) {
+         collateralMint = new PublicKey(process.env.COLLATERAL_MINT);
+         borrowMint = new PublicKey(process.env.BORROW_MINT);
+         logInfo("Using mints from .env");
+    } else if (deployment.collateralMint && deployment.borrowMint) {
         collateralMint = new PublicKey(deployment.collateralMint);
         borrowMint = new PublicKey(deployment.borrowMint);
         logInfo("Using mints from deployment.json");

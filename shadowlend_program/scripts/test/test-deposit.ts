@@ -298,7 +298,7 @@ async function testDeposit() {
       logInfo("Polling for state update (callback execution)...");
       process.stdout.write("   Waiting for state_nonce to increment");
       
-      const maxRetries = 90; // Wait up to 3 minutes
+      const maxRetries = 15; // 15 retries * 2s = 30 seconds max
       let callbackCompleted = false;
       let finalObligationAccount: any = null;
       
@@ -314,12 +314,6 @@ async function testDeposit() {
                 callbackCompleted = true;
                 finalObligationAccount = currentAccount;
                 break;
-            } else {
-                // Also check if computation account exists just for info
-                 const info = await provider.connection.getAccountInfo(finalComputationAccount);
-                 if (!info) {
-                     // Computation account not even created yet?
-                 }
             }
           } catch (e) {
              // connection error or account fetch error
@@ -331,9 +325,27 @@ async function testDeposit() {
       
       if (!callbackCompleted) {
           console.log("");
-          logError("Timeout waiting for state update.");
+          logError("Timeout waiting for state update (30s limit reached).");
           console.log(chalk.gray(`   The callback may have failed or the Arcium node is not processing events.`));
-          console.log(chalk.gray(`   Check Arcium Explorer for computation reference: ${computationOffset.toString()}`));
+          console.log(chalk.gray(`   Fetching recent transactions history for User Obligation account to show failures...`));
+          
+          try {
+               const signatures = await provider.connection.getSignaturesForAddress(userObligation, { limit: 5 });
+               if (signatures.length > 0) {
+                   logSection("Recent Transactions on User Obligation");
+                   for (const sig of signatures) {
+                       const status = sig.err ? chalk.red("FAILED") : chalk.green("SUCCESS");
+                       const errMsg = sig.err ? `Error: ${JSON.stringify(sig.err)}` : "";
+                       console.log(`   ${status} ${sig.signature} ${chalk.gray(errMsg)}`);
+                   }
+               } else {
+                   logWarning("No transactions found on User Obligation account (Callback never landed).");
+               }
+          } catch (e) {
+              logWarning("Failed to fetch transaction history.");
+          }
+
+          throw new Error("Deposit failed to finalize within 30s.");
       } else {
           // Check if encrypted deposit is updated
           if (finalObligationAccount) {

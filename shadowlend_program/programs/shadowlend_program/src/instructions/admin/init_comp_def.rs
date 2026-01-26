@@ -1,6 +1,8 @@
 use crate::ID;
 use anchor_lang::prelude::*;
 use arcium_anchor::prelude::*;
+use arcium_client::idl::arcium::types::{CircuitSource, OffChainCircuitSource};
+use arcium_macros::circuit_hash;
 
 // ============================================================
 // Deposit Computation Definition
@@ -24,7 +26,14 @@ pub struct InitDepositCompDef<'info> {
 }
 
 pub fn init_deposit_comp_def_handler(ctx: Context<InitDepositCompDef>) -> Result<()> {
-    init_comp_def(ctx.accounts, None, None)?;
+    init_comp_def(
+        ctx.accounts,
+        Some(CircuitSource::OffChain(OffChainCircuitSource {
+            source: "https://qisejajribahvwowmbef.supabase.co/storage/v1/object/public/Circuits/deposit.arcis".to_string(),
+            hash: circuit_hash!("deposit"),
+        })),
+        None,
+    )?;
     Ok(())
 }
 
@@ -50,7 +59,14 @@ pub struct InitWithdrawCompDef<'info> {
 }
 
 pub fn init_withdraw_comp_def_handler(ctx: Context<InitWithdrawCompDef>) -> Result<()> {
-    init_comp_def(ctx.accounts, None, None)?;
+    init_comp_def(
+        ctx.accounts,
+        Some(CircuitSource::OffChain(OffChainCircuitSource {
+            source: "https://qisejajribahvwowmbef.supabase.co/storage/v1/object/public/Circuits/withdraw.arcis".to_string(),
+            hash: circuit_hash!("withdraw"),
+        })),
+        None,
+    )?;
     Ok(())
 }
 
@@ -76,7 +92,14 @@ pub struct InitBorrowCompDef<'info> {
 }
 
 pub fn init_borrow_comp_def_handler(ctx: Context<InitBorrowCompDef>) -> Result<()> {
-    init_comp_def(ctx.accounts, None, None)?;
+    init_comp_def(
+        ctx.accounts,
+        Some(CircuitSource::OffChain(OffChainCircuitSource {
+            source: "https://qisejajribahvwowmbef.supabase.co/storage/v1/object/public/Circuits/borrow.arcis".to_string(),
+            hash: circuit_hash!("borrow"),
+        })),
+        None,
+    )?;
     Ok(())
 }
 
@@ -102,6 +125,13 @@ pub struct InitRepayCompDef<'info> {
 }
 
 pub fn init_repay_comp_def_handler(ctx: Context<InitRepayCompDef>) -> Result<()> {
-    init_comp_def(ctx.accounts, None, None)?;
+    init_comp_def(
+        ctx.accounts,
+        Some(CircuitSource::OffChain(OffChainCircuitSource {
+            source: "https://qisejajribahvwowmbef.supabase.co/storage/v1/object/public/Circuits/repay.arcis".to_string(),
+            hash: circuit_hash!("repay"),
+        })),
+        None,
+    )?;
     Ok(())
 }

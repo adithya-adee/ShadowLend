@@ -132,7 +132,13 @@ async function initializeComputationDefinitions() {
         // This ensures the circuit code is available on the Arcium network
         
         // --- Upload and Finalize Circuit ---
-        
+
+        /*
+        // THIS BLOCK IS FOR ON-CHAIN CIRCUITS AND HAS BEEN DISABLED.
+        // Since we are using off-chain circuits (e.g., from Supabase), we do not need
+        // to upload the circuit data to the blockchain. The circuit source URL is
+        // already set in the `init...CompDef` instruction.
+
         const buildDir = path.join(__dirname, "../../build");
         const arcisPath = path.join(buildDir, `${circuitName}.arcis`);
 
@@ -175,6 +181,7 @@ async function initializeComputationDefinitions() {
                  }
             }
         }
+        */
 
         // Finalize computation definition
         // This marks the definition as ready for use

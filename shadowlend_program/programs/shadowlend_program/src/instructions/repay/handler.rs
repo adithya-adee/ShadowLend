@@ -49,8 +49,7 @@ pub fn repay_handler(
         args.account(user_obligation.key(), 104u32, 32u32)
             .plaintext_u8(1)
     } else {
-        args.encrypted_u128([0u8; 32])
-            .plaintext_u8(0)
+        args.encrypted_u128([0u8; 32]).plaintext_u8(0)
     };
 
     ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;

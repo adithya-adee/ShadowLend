@@ -51,8 +51,7 @@ pub fn deposit_handler(
             args.account(user_obligation_key, 72u32, 32u32)
                 .plaintext_u8(1)
         } else {
-            args.encrypted_u128([0u8; 32])
-                .plaintext_u8(0)
+            args.encrypted_u128([0u8; 32]).plaintext_u8(0)
         };
 
         args.build()

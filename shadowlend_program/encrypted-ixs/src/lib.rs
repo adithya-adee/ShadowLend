@@ -35,7 +35,7 @@ mod circuits {
         } else {
             current_encrypted.to_arcis()
         };
-        
+
         let borrow = if is_borrow_initialized == 0 {
             0
         } else {
@@ -45,7 +45,7 @@ mod circuits {
         // Check if withdrawal maintains health AND sufficient collateral
         let amount_u128 = amount as u128;
         let sufficient_collateral = amount_u128 <= collateral;
-        
+
         let new_collateral = if sufficient_collateral {
             collateral - amount_u128
         } else {
@@ -100,7 +100,7 @@ mod circuits {
         // new_debt * 10000 <= col * ltv_bps
         let lhs = new_debt * 10000;
         let rhs = col * (ltv_bps as u128);
-        
+
         let approved = lhs <= rhs;
 
         let final_debt = if approved { new_debt } else { debt };

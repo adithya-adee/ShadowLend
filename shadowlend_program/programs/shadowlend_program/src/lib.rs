@@ -90,7 +90,7 @@ pub mod shadowlend_program {
             Ok(DepositOutput { field_0 }) => {
                 msg!("Output verified successfully.");
                 field_0
-            },
+            }
             Err(e) => {
                 msg!("Deposit verification failed: {}", e);
                 return Err(ErrorCode::AbortedComputation.into());
@@ -98,12 +98,18 @@ pub mod shadowlend_program {
         };
 
         let user_obligation = &mut ctx.accounts.user_obligation;
-        msg!("Updating user obligation. Old nonce: {}", user_obligation.state_nonce);
-        
+        msg!(
+            "Updating user obligation. Old nonce: {}",
+            user_obligation.state_nonce
+        );
+
         user_obligation.encrypted_deposit = result.ciphertexts[0];
         user_obligation.state_nonce += 1;
 
-        msg!("Deposit callback completed. New nonce: {}", user_obligation.state_nonce);
+        msg!(
+            "Deposit callback completed. New nonce: {}",
+            user_obligation.state_nonce
+        );
         Ok(())
     }
 
@@ -153,7 +159,7 @@ pub mod shadowlend_program {
             Ok(o) => {
                 msg!("Output verified successfully.");
                 o
-            },
+            }
             Err(e) => {
                 msg!("Borrow verification failed: {}", e);
                 return Err(ErrorCode::AbortedComputation.into());
@@ -164,11 +170,18 @@ pub mod shadowlend_program {
         let approved = inner.field_1;
         let amount = inner.field_2; // Revealed amount from circuit
 
-        msg!("Circuit result - Approved: {}, Amount: {}", approved, amount);
+        msg!(
+            "Circuit result - Approved: {}, Amount: {}",
+            approved,
+            amount
+        );
 
         if approved == 1 {
             let user_obligation = &mut ctx.accounts.user_obligation;
-            msg!("Updating user obligation. Old nonce: {}", user_obligation.state_nonce);
+            msg!(
+                "Updating user obligation. Old nonce: {}",
+                user_obligation.state_nonce
+            );
 
             user_obligation.encrypted_borrow = inner.field_0.ciphertexts[0];
             user_obligation.state_nonce += 1;
@@ -199,7 +212,11 @@ pub mod shadowlend_program {
                 amount,
             )?;
 
-            msg!("Borrow approved, transferred {} tokens. New nonce: {}", amount, user_obligation.state_nonce);
+            msg!(
+                "Borrow approved, transferred {} tokens. New nonce: {}",
+                amount,
+                user_obligation.state_nonce
+            );
         } else {
             msg!("Borrow rejected by health check (approved=0)");
         }
@@ -310,13 +327,7 @@ pub mod shadowlend_program {
         user_pubkey: [u8; 32],
         user_nonce: u128,
     ) -> Result<()> {
-        crate::instructions::repay_handler(
-            ctx,
-            computation_offset,
-            amount,
-            user_pubkey,
-            user_nonce,
-        )
+        crate::instructions::repay_handler(ctx, computation_offset, amount, user_pubkey, user_nonce)
     }
 
     /// Callback invoked by Arcium MXE after repayment computation completes.

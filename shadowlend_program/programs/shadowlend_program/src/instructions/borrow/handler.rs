@@ -49,7 +49,7 @@ pub fn borrow_handler(
     };
 
     args = args.plaintext_u64(ltv_bps);
-    
+
     // Add is_collateral_initialized flag
     args = if user_obligation.encrypted_deposit != [0u8; 32] {
         args.plaintext_u8(1)

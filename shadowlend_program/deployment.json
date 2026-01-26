@@ -1,12 +1,15 @@
 {
   "network": "devnet",
-  "programId": "wQPJWnqgWYwQCgU8CqWC8kn9yagmgPZ7TTF8LVkFakJ",
-  "timestamp": "2026-01-24T10:04:46.416Z",
-  "poolAddress": "9rJZhSZLfzAnuKUBHgvtWDmZWyHZAcmWuK1wRk52FLxw",
-  "collateralMint": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
-  "borrowMint": "So11111111111111111111111111111111111111112",
-  "mxeAccount": "9Zh3N6YwDBPnBYzeM5ufxbG4JnL8kAevsm87pDzy9ZRt",
+  "programId": "AgswW8vXd2CnG269md9rP8vXYGC3qohqshc9qqz43Tui",
+  "timestamp": "2026-01-26T06:37:17.394Z",
+  "mxeAccount": "5shuqXgEuzAFQy2VQNNFmVGsumB6G1ghjHkKTHtZfVVX",
   "computationDefinitions": {
-    "deposit": "3B3qS93VBujTbTp4hV4ifMFiEnbNTSpQzKBtXCWSJ1Nf"
-  }
+    "deposit": "Fi1pNv2Q7H7oE47477kpgcTBGrcjzVasY2K7dYkC6vgs",
+    "withdraw": "Cf5uDJNCVSkXBsq63bzr8HhfkLg3rW31CUSVU36i27WP",
+    "borrow": "5Dp7CxQy7nLkMWHy9JGKH5XjdeE1ey7VuFbFNJ6NwKu7",
+    "repay": "GLXWrvXLtsdjMP4SDhHNZqRqP3yJ4QsuQkJ8wTZgzrZj"
+  },
+  "collateralMint": "EHB3GDqnfreMBcEuYvAKHtvLHPrv6KUpjuHhanm674Bs",
+  "borrowMint": "6ym5YGTyu52wJ68VJkJmd93UMc2gzSzAmn6yRpZ1Lomf",
+  "poolAddress": "4Kp3geA93rgzawJRErTe8U3bXWfLB4mHWirtt9G1Rrhn"
 }

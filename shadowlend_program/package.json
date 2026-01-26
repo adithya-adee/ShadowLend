@@ -6,7 +6,7 @@
     "setup:check-mxe": "ts-node scripts/setup/check-mxe.ts",
     "setup:init-pool": "ts-node scripts/setup/initialize-pool.ts",
     "setup:init-comp-defs": "ts-node scripts/setup/initialize-comp-defs.ts",
-    "setup:all": "npm run setup:check-mxe && npm run setup:init-pool && npm run setup:init-comp-defs",
+    "setup:all": "ts-node scripts/setup/setup-all.ts",
     "test:deposit": "ts-node scripts/test/test-deposit.ts",
     "test:borrow": "ts-node scripts/test/test-borrow.ts",
     "test:withdraw": "ts-node scripts/test/test-withdraw.ts",

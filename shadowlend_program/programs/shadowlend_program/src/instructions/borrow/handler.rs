@@ -1,6 +1,5 @@
 use super::accounts::Borrow;
 use super::callback::BorrowCallback;
-use crate::error::ErrorCode;
 use anchor_lang::prelude::*;
 use arcium_anchor::prelude::*;
 use arcium_client::idl::arcium::types::CallbackAccount;
@@ -18,54 +17,57 @@ use arcium_client::idl::arcium::types::CallbackAccount;
 pub fn borrow_handler(
     ctx: Context<Borrow>,
     computation_offset: u64,
-    amount: u64,
+    amount: [u8; 32],
     user_pubkey: [u8; 32],
     user_nonce: u128,
 ) -> Result<()> {
-    require!(amount > 0, ErrorCode::InvalidAmount);
-
     let user_obligation = &ctx.accounts.user_obligation;
     let pool = &ctx.accounts.pool;
     let ltv_bps = pool.ltv_bps as u64;
 
-    let mut args = ArgBuilder::new()
-        .plaintext_u64(amount)
-        .x25519_pubkey(user_pubkey)
-        .plaintext_u128(user_nonce);
+    // Args:
+    // 0. Encrypted Deposit (Account or Zero)
+    // 1. Encrypted Borrow (Account or Zero)
+    // 2. Encrypted Internal Balance (Account or Zero)
+    // 3. Encrypted Borrow Amount (Input)
+    // 4. LTV (Plaintext)
+    // 5. Flags (is_deposit_init, is_borrow_init)
 
-    // Offset 72 = 8 (discriminator) + 32 (user) + 32 (pool)
+    let mut args = ArgBuilder::new();
+
+    // Configure the encryption context for account loading
+    args = args.x25519_pubkey(user_pubkey).plaintext_u128(user_nonce);
+
+    // Build circuit arguments matching the Arcis 'borrow' function signature
     args = if user_obligation.encrypted_deposit != [0u8; 32] {
         args.account(user_obligation.key(), 72u32, 32u32)
     } else {
         args.encrypted_u128([0u8; 32])
     };
 
-    // Offset 104 = 72 + 32 (encrypted_deposit)
-    args = args.x25519_pubkey(user_pubkey).plaintext_u128(user_nonce);
     args = if user_obligation.encrypted_borrow != [0u8; 32] {
         args.account(user_obligation.key(), 104u32, 32u32)
     } else {
         args.encrypted_u128([0u8; 32])
     };
 
+    args = if user_obligation.encrypted_internal_balance != [0u8; 32] {
+        args.account(user_obligation.key(), 136u32, 32u32)
+    } else {
+        args.encrypted_u128([0u8; 32])
+    };
+
+    // Pass the requested borrow amount and pool LTV
+    args = args.encrypted_u128(amount);
     args = args.plaintext_u64(ltv_bps);
 
-    // Add is_collateral_initialized flag
-    args = if user_obligation.encrypted_deposit != [0u8; 32] {
-        args.plaintext_u8(1)
-    } else {
-        args.plaintext_u8(0)
-    };
-
-    // Add is_debt_initialized flag
-    args = if user_obligation.encrypted_borrow != [0u8; 32] {
-        args.plaintext_u8(1)
-    } else {
-        args.plaintext_u8(0)
-    };
+    // Initialization flags for circuit logic
+    args = args.plaintext_u8(if user_obligation.encrypted_deposit != [0u8; 32] { 1 } else { 0 });
+    args = args.plaintext_u8(if user_obligation.encrypted_borrow != [0u8; 32] { 1 } else { 0 });
 
     ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
 
+    // Queue the asynchronous Arcium computation with configured callbacks
     queue_computation(
         ctx.accounts,
         computation_offset,
@@ -83,24 +85,12 @@ pub fn borrow_handler(
                     pubkey: pool.key(),
                     is_writable: true,
                 },
-                CallbackAccount {
-                    pubkey: ctx.accounts.user_token_account.key(),
-                    is_writable: true,
-                },
-                CallbackAccount {
-                    pubkey: ctx.accounts.borrow_vault.key(),
-                    is_writable: true,
-                },
-                CallbackAccount {
-                    pubkey: ctx.accounts.token_program.key(),
-                    is_writable: false,
-                },
             ],
         )?],
         1,
         0,
     )?;
 
-    msg!("Queued borrow computation for {} tokens", amount);
+    msg!("Queued borrow computation for {:?} tokens", amount);
     Ok(())
 }

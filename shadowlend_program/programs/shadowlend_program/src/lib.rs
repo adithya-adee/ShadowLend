@@ -15,16 +15,17 @@ pub const COMP_DEF_OFFSET_WITHDRAW: u32 = comp_def_offset("withdraw");
 pub const COMP_DEF_OFFSET_BORROW: u32 = comp_def_offset("borrow");
 pub const COMP_DEF_OFFSET_REPAY: u32 = comp_def_offset("repay");
 pub const COMP_DEF_OFFSET_LIQUIDATE: u32 = comp_def_offset("liquidate");
+pub const COMP_DEF_OFFSET_SPEND: u32 = comp_def_offset("spend");
 
-declare_id!("FpHChpheLnvPS9Qd7DyXwSrvSc3KCELkx4BC5MTE8T7k");
+declare_id!("GBZuUu8FuaKZXxet7PTLrKj4yxtVqVcH2xf7e8GoARrR");
 
 #[arcium_program]
 pub mod shadowlend_program {
     use super::*;
     use crate::error::ErrorCode;
     use crate::instructions::{
-        Borrow, BorrowCallback, ClosePool, Deposit, DepositCallback, InitializePool, Repay,
-        RepayCallback, Withdraw, WithdrawCallback,
+        Borrow, BorrowCallback, ClosePool, Deposit, DepositCallback, InitializePool, Liquidate,
+        LiquidateCallback, Repay, RepayCallback, Spend, SpendCallback, Withdraw, WithdrawCallback,
     };
 
     /// Initializes the lending pool with risk parameters.
@@ -117,15 +118,15 @@ pub mod shadowlend_program {
     /// Initiates a borrow request with confidential health check.
     ///
     /// Queues an MPC computation to verify the health factor remains above
-    /// the liquidation threshold. Token transfer occurs in callback if approved.
+    /// the liquidation threshold. If approved, internal credit is increased.
     ///
     /// # Arguments
     /// * `computation_offset` - Unique identifier for this Arcium computation
-    /// * `amount` - Token amount to borrow
+    /// * `amount` - Encrypted token amount to borrow
     pub fn borrow(
         ctx: Context<Borrow>,
         computation_offset: u64,
-        amount: u64,
+        amount: [u8; 32],
         user_pubkey: [u8; 32],
         user_nonce: u128,
     ) -> Result<()> {
@@ -141,10 +142,10 @@ pub mod shadowlend_program {
     /// Callback invoked by Arcium MXE after borrow health check completes.
     ///
     /// Verifies the MPC output and, if approved, updates encrypted debt and
-    /// transfers tokens from the borrow vault to the user using PDA signer.
+    /// encrypted internal balance. No token transfer occurs here (V3).
     ///
     /// # Arguments
-    /// * `output` - Contains: encrypted_debt, approval_status (1/0), amount
+    /// * `output` - Contains: encrypted_debt, encrypted_internal_balance, approval_status
     #[arcium_callback(encrypted_ix = "borrow")]
     pub fn borrow_callback(
         ctx: Context<BorrowCallback>,
@@ -168,13 +169,13 @@ pub mod shadowlend_program {
         };
 
         let inner = result.field_0;
-        let approved = inner.field_1;
-        let amount = inner.field_2; // Revealed amount from circuit
+        let enc_borrow = inner.field_0;
+        let enc_internal_balance = inner.field_1;
+        let approved = inner.field_2;
 
         msg!(
-            "Circuit result - Approved: {}, Amount: {}",
-            approved,
-            amount
+            "Circuit result - Approved: {}",
+            approved
         );
 
         if approved == 1 {
@@ -184,44 +185,17 @@ pub mod shadowlend_program {
                 user_obligation.state_nonce
             );
 
-            user_obligation.encrypted_borrow = inner.field_0.ciphertexts[0];
+            user_obligation.encrypted_borrow = enc_borrow.ciphertexts[0];
+            user_obligation.encrypted_internal_balance = enc_internal_balance.ciphertexts[0];
             user_obligation.state_nonce += 1;
 
-            // Vault PDA signs the transfer
-            let pool_key = ctx.accounts.pool.key();
-            let seeds: &[&[u8]] = &[
-                b"borrow_vault",
-                pool_key.as_ref(),
-                &[ctx.bumps.borrow_vault],
-            ];
-            let signer = &[&seeds[..]];
-
-            let transfer_cpi = Transfer {
-                from: ctx.accounts.borrow_vault.to_account_info(),
-                to: ctx.accounts.user_token_account.to_account_info(),
-                authority: ctx.accounts.borrow_vault.to_account_info(),
-            };
-
-            msg!("Transferring {} tokens to user...", amount);
-
-            token::transfer(
-                CpiContext::new_with_signer(
-                    ctx.accounts.token_program.to_account_info(),
-                    transfer_cpi,
-                    signer,
-                ),
-                amount,
-            )?;
-
             msg!(
-                "Borrow approved, transferred {} tokens. New nonce: {}",
-                amount,
+                "Borrow approved. Internal balance updated. New nonce: {}",
                 user_obligation.state_nonce
             );
-
-            // Update global borrows
-            let pool = &mut ctx.accounts.pool;
-            pool.total_borrows = pool.total_borrows.checked_add(amount).ok_or(ErrorCode::MathOverflow)?;
+            
+            // Note: total_borrows cannot be updated here as amount is confidential.
+            // It will only be updated upon public Spend, or never (if privacy is absolute).
         } else {
             msg!("Borrow rejected by health check (approved=0)");
         }
@@ -520,6 +494,104 @@ pub mod shadowlend_program {
     /// Initializes liquidate computation definition
     pub fn init_liquidate_comp_def(ctx: Context<InitLiquidateCompDef>) -> Result<()> {
         crate::instructions::admin::init_liquidate_comp_def_handler(ctx)
+    }
+
+    /// Initiates a confidential spend.
+    ///
+    /// Checks if internal balance is sufficient and updates it.
+    /// Queues computation.
+    pub fn spend(
+        ctx: Context<Spend>,
+        computation_offset: u64,
+        amount: u64,
+        user_pubkey: [u8; 32],
+        user_nonce: u128,
+    ) -> Result<()> {
+        crate::instructions::spend_handler(
+            ctx,
+            computation_offset,
+            amount,
+            user_pubkey,
+            user_nonce,
+        )
+    }
+
+    /// Callback for confidential spend.
+    ///
+    /// Updates internal balance and transfers tokens if approved.
+    #[arcium_callback(encrypted_ix = "spend")]
+    pub fn spend_callback(
+        ctx: Context<SpendCallback>,
+        output: SignedComputationOutputs<SpendOutput>,
+    ) -> Result<()> {
+        let result = match output.verify_output(
+            &ctx.accounts.cluster_account,
+            &ctx.accounts.computation_account,
+        ) {
+            Ok(o) => o,
+            Err(e) => {
+                msg!("Spend verification failed: {}", e);
+                return Err(ErrorCode::AbortedComputation.into());
+            }
+        };
+
+        // Output: (NewInternal, Approved(u8), Amount(u64))
+        // Parse circuit results: (Enc<Shared, u128>, u8, u64)
+        // field_0: New encrypted internal balance
+        // field_1: Approval status (1 = Sufficient balance, 0 = Rejected)
+        // field_2: Plaintext spend amount for public transfer
+        let inner = result.field_0;
+        let enc_internal = inner.field_0; 
+        let approved = inner.field_1; 
+        let amount = inner.field_2; 
+
+        if approved == 1 {
+            let user_obligation = &mut ctx.accounts.user_obligation;
+            
+            // Update the confidential balance on the user obligation
+            user_obligation.encrypted_internal_balance = enc_internal.ciphertexts[0];
+            user_obligation.state_nonce += 1;
+
+            // Prepare PDA seeds for the borrow vault to sign the outgoing transfer
+            let pool_key = ctx.accounts.pool.key();
+            let seeds: &[&[u8]] = &[
+                b"borrow_vault",
+                pool_key.as_ref(),
+                &[ctx.bumps.borrow_vault],
+            ];
+            let signer = &[&seeds[..]];
+
+            let transfer_cpi = Transfer {
+                from: ctx.accounts.borrow_vault.to_account_info(),
+                to: ctx.accounts.destination_token_account.to_account_info(),
+                authority: ctx.accounts.borrow_vault.to_account_info(),
+            };
+
+            msg!("Spend approved. Executing public transfer of {} tokens.", amount);
+
+            token::transfer(
+                CpiContext::new_with_signer(
+                    ctx.accounts.token_program.to_account_info(),
+                    transfer_cpi,
+                    signer,
+                ),
+                amount,
+            )?;
+            
+            // Update total_borrows to reflect funds leaving the pool
+            let pool = &mut ctx.accounts.pool;
+            pool.total_borrows = pool.total_borrows.checked_add(amount).unwrap_or(pool.total_borrows);
+
+        } else {
+            msg!("Spend rejected: Insufficient internal balance.");
+        }
+
+        Ok(())
+    }
+    
+    /// Initializes spend computation definition
+    pub fn init_spend_comp_def(ctx: Context<InitSpendCompDef>) -> Result<()> {
+        crate::instructions::admin::init_spend_comp_def_handler(ctx)
     }
 
     /// Closes the lending pool (admin only)

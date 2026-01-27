@@ -75,7 +75,7 @@ pub struct Deposit<'info> {
     #[account(
         init_if_needed,
         payer = payer,
-        space = 8 + 32 + 32 + 32 + 32 + 16 + 1,
+        space = 8 + 32 + 32 + 32 + 32 + 32 + 16 + 1,
         seeds = [UserObligation::SEED_PREFIX, payer.key().as_ref(), pool.key().as_ref()],
         bump
     )]

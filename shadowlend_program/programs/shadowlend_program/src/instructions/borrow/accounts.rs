@@ -1,7 +1,5 @@
 use crate::state::{Pool, UserObligation};
 use anchor_lang::prelude::*;
-use anchor_spl::associated_token::AssociatedToken;
-use anchor_spl::token::{Mint, Token, TokenAccount};
 use arcium_anchor::prelude::*;
 
 use crate::error::ErrorCode;
@@ -9,7 +7,7 @@ use crate::{ArciumSignerAccount, COMP_DEF_OFFSET_BORROW, ID, ID_CONST};
 
 #[queue_computation_accounts("borrow", payer)]
 #[derive(Accounts)]
-#[instruction(computation_offset: u64, amount: u64, user_pubkey: [u8; 32], user_nonce: u128)]
+#[instruction(computation_offset: u64, amount: [u8; 32], user_pubkey: [u8; 32], user_nonce: u128)]
 pub struct Borrow<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
@@ -77,31 +75,6 @@ pub struct Borrow<'info> {
     )]
     pub user_obligation: Box<Account<'info, UserObligation>>,
 
-    #[account(
-        address = pool.borrow_mint
-    )]
-    pub borrow_mint: Box<Account<'info, Mint>>,
-
-    /// Destination for borrowed tokens
-    #[account(
-        init_if_needed,
-        payer = payer,
-        associated_token::mint = borrow_mint,
-        associated_token::authority = payer,
-        constraint = user_token_account.mint == borrow_mint.key() @ ErrorCode::InvalidMint,
-    )]
-    pub user_token_account: Box<Account<'info, TokenAccount>>,
-
-    /// Pool's borrow vault (source of funds)
-    #[account(
-        mut,
-        seeds = [b"borrow_vault", pool.key().as_ref()],
-        bump
-    )]
-    pub borrow_vault: Box<Account<'info, TokenAccount>>,
-
-    pub token_program: Program<'info, Token>,
-    pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
     pub arcium_program: Program<'info, Arcium>,
 }

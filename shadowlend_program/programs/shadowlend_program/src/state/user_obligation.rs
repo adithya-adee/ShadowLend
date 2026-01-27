@@ -17,6 +17,10 @@ pub struct UserObligation {
     /// This is a 32-byte ciphertext from Arcium MPC
     pub encrypted_borrow: [u8; 32],
 
+    /// Encrypted internal credit balance - Enc<Shared, u128>
+    /// Represents funds borrowed but not yet withdrawn (Asset)
+    pub encrypted_internal_balance: [u8; 32],
+
     /// Replay protection nonce (incremented each state update)
     pub state_nonce: u128,
 

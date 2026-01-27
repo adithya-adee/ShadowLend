@@ -98,7 +98,7 @@ async function testBorrow() {
     // We will initialize it via deposit if missing/empty in Step 1 below
 
     // Test parameters
-    const borrowAmount = new BN(500_000); // 5000 units
+    const borrowAmountHash = Array.from(Buffer.alloc(32, 1)); // Dummy encrypted amount (32 bytes)
     const computationOffset = generateComputationOffset();
 
     // Use persistent X25519 keypair for Arcium context
@@ -349,25 +349,12 @@ async function testBorrow() {
     logHeader("Step 2: Borrow");
 
     logSection("Borrow Parameters");
-    logEntry("Amount", borrowAmount.toString(), icons.arrow);
+    logEntry("Amount", "Encrypted (32 bytes)", icons.arrow);
     logEntry("Computation Offset", computationOffset.toString(), icons.clock);
     logEntry("User Nonce", userNonce.toString(), icons.key);
 
 
-    // FUND BORROW VAULT IF EMPTY
-    try {
-        const mintInfo = await (await import("@solana/spl-token")).getMint(provider.connection, borrowMint);
-        logEntry("Mint Decimals", mintInfo.decimals.toString(), icons.info);
-
-        const targetVaultBalance = 10_000_000_000n; 
-        
-        // Ensure Vault ATA exists (It should, from init_pool)
-        // Fund it
-        await fundAccount(borrowVault, targetVaultBalance, borrowMint);
-
-    } catch (e) {
-        logError("Failed to fund vault", e);
-    }
+    // V3 Borrow is Internal Only - No Vault Funding needed here (moved to Spend)
 
 
     // Capture pre-transaction balances
@@ -389,8 +376,8 @@ async function testBorrow() {
         const tx = await program.methods
             .borrow(
                 computationOffset,
-                borrowAmount,
-                userPubkey,
+                borrowAmountHash,
+                userPubkey, 
                 userNonce
             )
             .accountsPartial({
@@ -406,11 +393,6 @@ async function testBorrow() {
                 clockAccount,
                 pool: poolPda,
                 userObligation,
-                borrowMint,
-                userTokenAccount, // This is borrow token account
-                borrowVault,
-                tokenProgram: TOKEN_PROGRAM_ID,
-                associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
                 systemProgram: SystemProgram.programId,
                 arciumProgram: arciumProgramId,
             })
@@ -460,66 +442,28 @@ async function testBorrow() {
                 signatures.forEach(sig => console.log(`Sig: ${sig.signature} ${sig.err ? "ERR" : "OK"}`));
             } catch (e) {}
 
-        } else {
-            logDivider();
-            logHeader("Verification");
-            
-            // Check Final Balances
-            const finalTokenInfo = await provider.connection.getTokenAccountBalance(userTokenAccount);
-            const finalBalance = BigInt(new BN(finalTokenInfo.value.amount).toString());
-            
-            const postBorrowVaultBalance = (await getAccount(provider.connection, borrowVault)).amount;
-            const postCollateralVaultBalance = (await getAccount(provider.connection, collateralVault)).amount;
-
-            logEntry("User Token Address", userTokenAccount.toBase58(), icons.key);
-            logEntry("Vault Token Address", borrowVault.toBase58(), icons.key);
-            logEntry("Borrow Mint", borrowMint.toBase58(), icons.key);
-            
-            logEntry("Pre-Borrow Balance (User)", preUserTokenBalance.toString(), icons.info);
-            logEntry("Final Balance (User)", finalBalance.toString(), icons.key);
-            
-            logEntry("Pre-Borrow Vault Balance", preBorrowVaultBalance.toString(), icons.info);
-            logEntry("Final Vault Balance", postBorrowVaultBalance.toString(), icons.key);
-            
-            logEntry("Pre-Collateral Vault Balance", preCollateralVaultBalance.toString(), icons.info);
-            logEntry("Final Collateral Vault Balance", postCollateralVaultBalance.toString(), icons.key);
-            
-            const userBalanceIncreased = finalBalance > preUserTokenBalance;
-            const vaultBalanceDecreased = postBorrowVaultBalance < preBorrowVaultBalance;
-            const collateralVaultIncreased = postCollateralVaultBalance > preCollateralVaultBalance;
-
-            if (userBalanceIncreased && vaultBalanceDecreased) {
-                logSuccess(`Balance increased by ${finalBalance - preUserTokenBalance} (Expected: ${borrowAmount})`);
-                logSuccess(`Vault Balance decreased by ${preBorrowVaultBalance - postBorrowVaultBalance}`);
-            } else {
-                logWarning("Balances did not change as expected!");
-                logEntry("User Balance Increased?", userBalanceIncreased ? "YES" : "NO", userBalanceIncreased ? icons.checkmark : icons.cross);
-                logEntry("Vault Balance Decreased?", vaultBalanceDecreased ? "YES" : "NO", vaultBalanceDecreased ? icons.checkmark : icons.cross);
-                
-                logEntry("Result", "Transaction likely Rejected by LTV Health Check", icons.warning); 
-                logInfo(`Collateral: ~${BigInt(depositAmount.toString())} | Requested Borrow: ${borrowAmount}`);
-            }
-
-            if (collateralVaultIncreased) {
-                 logInfo("Collateral Vault increased (Unexpected for pure borrow, but verified).");
-            } else {
-                 logInfo("Collateral Vault balance unchanged (Expected).");
-            }
-
             // Check Encrypted State
             const account = await (program.account as any).userObligation.fetch(userObligation);
             
-            const poolAccount = await (program.account as any).pool.fetch(poolPda);
-            logEntry("LTV BPS", poolAccount.ltvBps.toString(), icons.info);
-            
             const encBorrow = account.encryptedBorrow;
-            console.log("Encrypted Borrow (Hex):", Buffer.from(encBorrow).toString('hex'));
+            const encInternal = account.encryptedInternalBalance;
             
+            console.log("Encrypted Borrow (Hex):", Buffer.from(encBorrow).toString('hex'));
+            console.log("Encrypted Internal (Hex):", Buffer.from(encInternal).toString('hex'));
+
             const isZero = Buffer.from(encBorrow).every(b => b === 0);
+            const isInternalZero = Buffer.from(encInternal).every(b => b === 0);
+
             if (isZero) {
                 logWarning("Encrypted Borrow is ALL ZEROS.");
             } else {
-                logSuccess("Encrypted Borrow updated with non-zero ciphertext.");
+                logSuccess("Encrypted Borrow updated.");
+            }
+
+            if (isInternalZero) {
+                 logWarning("Encrypted Internal Balance is ALL ZEROS.");
+            } else {
+                 logSuccess("Encrypted Internal Balance updated.");
             }
         }
 

@@ -26,44 +26,39 @@ pub fn borrow_handler(
     let ltv_bps = pool.ltv_bps as u64;
 
     // Args:
-    // 0. Encrypted Deposit (Account or Zero)
-    // 1. Encrypted Borrow (Account or Zero)
-    // 2. Encrypted Internal Balance (Account or Zero)
-    // 3. Encrypted Borrow Amount (Input)
-    // 4. LTV (Plaintext)
-    // 5. Flags (is_deposit_init, is_borrow_init)
+    // 0. Encrypted UserState (Account or Zero Struct)
+    // 1. Encrypted Borrow Amount (Input)
+    // 2. LTV (Plaintext)
+    // 3. Flags (is_initialized)
 
     let mut args = ArgBuilder::new();
 
     // Configure the encryption context for account loading
     args = args.x25519_pubkey(user_pubkey).plaintext_u128(user_nonce);
-
+    
     // Build circuit arguments matching the Arcis 'borrow' function signature
-    args = if user_obligation.encrypted_deposit != [0u8; 32] {
-        args.account(user_obligation.key(), 72u32, 32u32)
+    args = if user_obligation.is_initialized {
+        args.account(user_obligation.key(), 72u32, 96u32)
     } else {
-        args.encrypted_u128([0u8; 32])
+        args.encrypted_u128([0u8; 32]) // deposit
+            .encrypted_u128([0u8; 32]) // debt
+            .encrypted_u128([0u8; 32]) // internal_balance
     };
 
-    args = if user_obligation.encrypted_borrow != [0u8; 32] {
-        args.account(user_obligation.key(), 104u32, 32u32)
-    } else {
-        args.encrypted_u128([0u8; 32])
-    };
-
-    args = if user_obligation.encrypted_internal_balance != [0u8; 32] {
-        args.account(user_obligation.key(), 136u32, 32u32)
-    } else {
-        args.encrypted_u128([0u8; 32])
-    };
-
-    // Pass the requested borrow amount and pool LTV
+    // Pass the requested borrow amount (Encrypted, so requires context)
+    // Context is already set for encrypted_u128 if previous call was args.account (which preserves context? No wait.)
+    // ArgBuilder resets context? Usually. But wait, `ArgBuilder` context applies to the *next* encrypted arg.
+    // If I used `account()`, that consumed the context.
+    // If I used `encrypted_u128` chain, that might preserve it or need refresh.
+    // The previous code had repeated `x25519_pubkey` calls.
+    // Let's re-add context for `amount`.
+    args = args.x25519_pubkey(user_pubkey).plaintext_u128(user_nonce); 
     args = args.encrypted_u128(amount);
+
     args = args.plaintext_u64(ltv_bps);
 
     // Initialization flags for circuit logic
-    args = args.plaintext_u8(if user_obligation.encrypted_deposit != [0u8; 32] { 1 } else { 0 });
-    args = args.plaintext_u8(if user_obligation.encrypted_borrow != [0u8; 32] { 1 } else { 0 });
+    args = args.plaintext_u8(if user_obligation.is_initialized { 1 } else { 0 });
 
     ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
 

@@ -105,7 +105,15 @@ pub mod shadowlend_program {
             user_obligation.state_nonce
         );
 
-        user_obligation.encrypted_deposit = result.ciphertexts[0];
+        // Flatten 3 ciphertexts into [u8; 96]
+        let c = result.ciphertexts;
+        if c.len() >= 3 {
+             user_obligation.encrypted_state[0..32].copy_from_slice(&c[0]);
+             user_obligation.encrypted_state[32..64].copy_from_slice(&c[1]);
+             user_obligation.encrypted_state[64..96].copy_from_slice(&c[2]);
+        }
+        
+        user_obligation.is_initialized = true;
         user_obligation.state_nonce += 1;
 
         msg!(
@@ -145,7 +153,7 @@ pub mod shadowlend_program {
     /// encrypted internal balance. No token transfer occurs here (V3).
     ///
     /// # Arguments
-    /// * `output` - Contains: encrypted_debt, encrypted_internal_balance, approval_status
+    /// * `output` - Contains: new_state, approval_status
     #[arcium_callback(encrypted_ix = "borrow")]
     pub fn borrow_callback(
         ctx: Context<BorrowCallback>,
@@ -168,10 +176,8 @@ pub mod shadowlend_program {
             }
         };
 
-        let inner = result.field_0;
-        let enc_borrow = inner.field_0;
-        let enc_internal_balance = inner.field_1;
-        let approved = inner.field_2;
+        let inner = result.field_0; // Enc<Shared, UserState>
+        let approved = result.field_1; // u8
 
         msg!(
             "Circuit result - Approved: {}",
@@ -185,12 +191,16 @@ pub mod shadowlend_program {
                 user_obligation.state_nonce
             );
 
-            user_obligation.encrypted_borrow = enc_borrow.ciphertexts[0];
-            user_obligation.encrypted_internal_balance = enc_internal_balance.ciphertexts[0];
+            let c = inner.ciphertexts;
+            if c.len() >= 3 {
+                user_obligation.encrypted_state[0..32].copy_from_slice(&c[0]);
+                user_obligation.encrypted_state[32..64].copy_from_slice(&c[1]);
+                user_obligation.encrypted_state[64..96].copy_from_slice(&c[2]);
+            }
             user_obligation.state_nonce += 1;
 
             msg!(
-                "Borrow approved. Internal balance updated. New nonce: {}",
+                "Borrow approved. State updated. New nonce: {}",
                 user_obligation.state_nonce
             );
             
@@ -233,7 +243,7 @@ pub mod shadowlend_program {
     /// transfers tokens from the collateral vault to user using PDA signer.
     ///
     /// # Arguments
-    /// * `output` - Contains: encrypted_collateral, approval_status (1/0), amount
+    /// * `output` - Contains: new_state, approval_status (1/0), amount
     #[arcium_callback(encrypted_ix = "withdraw")]
     pub fn withdraw_callback(
         ctx: Context<WithdrawCallback>,
@@ -250,13 +260,19 @@ pub mod shadowlend_program {
             }
         };
 
-        let inner = result.field_0;
-        let approved = inner.field_1;
-        let amount = inner.field_2;
+        let inner_state = result.field_0;
+        let approved = result.field_1;
+        let amount = result.field_2;
 
         if approved == 1 {
             let user_obligation = &mut ctx.accounts.user_obligation;
-            user_obligation.encrypted_deposit = inner.field_0.ciphertexts[0];
+            
+            let c = inner_state.ciphertexts;
+            if c.len() >= 3 {
+                user_obligation.encrypted_state[0..32].copy_from_slice(&c[0]);
+                user_obligation.encrypted_state[32..64].copy_from_slice(&c[1]);
+                user_obligation.encrypted_state[64..96].copy_from_slice(&c[2]);
+            }
             user_obligation.state_nonce += 1;
 
             // Vault PDA signs the transfer
@@ -319,7 +335,7 @@ pub mod shadowlend_program {
     /// debt balance with the new value after repayment.
     ///
     /// # Arguments
-    /// * `output` - Signed computation outputs containing new encrypted debt
+    /// * `output` - Signed computation outputs containing new encrypted state
     #[arcium_callback(encrypted_ix = "repay")]
     pub fn repay_callback(
         ctx: Context<RepayCallback>,
@@ -337,7 +353,14 @@ pub mod shadowlend_program {
         };
 
         let user_obligation = &mut ctx.accounts.user_obligation;
-        user_obligation.encrypted_borrow = result.ciphertexts[0];
+        
+        let c = result.ciphertexts;
+        if c.len() >= 3 {
+             user_obligation.encrypted_state[0..32].copy_from_slice(&c[0]);
+             user_obligation.encrypted_state[32..64].copy_from_slice(&c[1]);
+             user_obligation.encrypted_state[64..96].copy_from_slice(&c[2]);
+        }
+        user_obligation.is_initialized = true; // Ensure flag is set on first interaction if any
         user_obligation.state_nonce += 1;
 
         msg!("Repay callback completed");
@@ -384,23 +407,23 @@ pub mod shadowlend_program {
             }
         };
 
-        let inner = result.field_0;
+        let inner_state = result.field_0; // Enc<Shared, UserState>
         
         // Encrypted outputs are wrapped in structs with 'ciphertexts' field
-        let enc_deposit = inner.field_0.ciphertexts[0];
-        let enc_borrow = inner.field_1.ciphertexts[0];
+        let c = inner_state.ciphertexts;
 
-        let is_liquidatable = inner.field_2; // 1 or 0
-        let seized_collateral = inner.field_3;
-        let repaid_amount = inner.field_4; // Echoed back amount
+        let is_liquidatable = result.field_1; // 1 or 0
+        let seized_collateral = result.field_2;
+        let repaid_amount = result.field_3; // Echoed back amount
 
         let user_obligation = &mut ctx.accounts.user_obligation;
         
         // Always update state (nonce, encrypted balances)
-        // If query failed (healthy), circuit should output OLD balances (or unchanged).
-        // If succeeded, NEW balances.
-        user_obligation.encrypted_deposit = enc_deposit;
-        user_obligation.encrypted_borrow = enc_borrow;
+        if c.len() >= 3 {
+            user_obligation.encrypted_state[0..32].copy_from_slice(&c[0]);
+            user_obligation.encrypted_state[32..64].copy_from_slice(&c[1]);
+            user_obligation.encrypted_state[64..96].copy_from_slice(&c[2]);
+        }
         user_obligation.state_nonce += 1;
 
         if is_liquidatable == 1 {
@@ -536,20 +559,22 @@ pub mod shadowlend_program {
         };
 
         // Output: (NewInternal, Approved(u8), Amount(u64))
-        // Parse circuit results: (Enc<Shared, u128>, u8, u64)
-        // field_0: New encrypted internal balance
-        // field_1: Approval status (1 = Sufficient balance, 0 = Rejected)
-        // field_2: Plaintext spend amount for public transfer
-        let inner = result.field_0;
-        let enc_internal = inner.field_0; 
-        let approved = inner.field_1; 
-        let amount = inner.field_2; 
+        // Parse circuit results: (Enc<Shared, UserState>, u8, u64)
+        
+        let inner_state = result.field_0; 
+        let approved = result.field_1; 
+        let amount = result.field_2; 
 
         if approved == 1 {
             let user_obligation = &mut ctx.accounts.user_obligation;
             
             // Update the confidential balance on the user obligation
-            user_obligation.encrypted_internal_balance = enc_internal.ciphertexts[0];
+            let c = inner_state.ciphertexts;
+            if c.len() >= 3 {
+                user_obligation.encrypted_state[0..32].copy_from_slice(&c[0]);
+                user_obligation.encrypted_state[32..64].copy_from_slice(&c[1]);
+                user_obligation.encrypted_state[64..96].copy_from_slice(&c[2]);
+            }
             user_obligation.state_nonce += 1;
 
             // Prepare PDA seeds for the borrow vault to sign the outgoing transfer

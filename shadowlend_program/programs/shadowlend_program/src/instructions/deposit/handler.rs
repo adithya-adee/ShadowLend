@@ -35,8 +35,8 @@ pub fn deposit_handler(
         if user_obligation.user == Pubkey::default() {
             user_obligation.user = ctx.accounts.payer.key();
             user_obligation.pool = ctx.accounts.pool.key();
-            user_obligation.encrypted_deposit = [0u8; 32];
-            user_obligation.encrypted_borrow = [0u8; 32];
+            user_obligation.encrypted_state = [0u8; 96];
+            user_obligation.is_initialized = false;
             user_obligation.state_nonce = 0;
             user_obligation.bump = ctx.bumps.user_obligation;
         }
@@ -46,12 +46,15 @@ pub fn deposit_handler(
             .x25519_pubkey(user_pubkey)
             .plaintext_u128(user_nonce);
 
-        // Offset 72 = 8 (discriminator) + 32 (user) + 32 (pool)
-        args = if user_obligation.encrypted_deposit != [0u8; 32] {
-            args.account(user_obligation_key, 72u32, 32u32)
-                .plaintext_u8(1)
+        // Offset 72 starts at `encrypted_state`. Length is 96 bytes.
+        args = if user_obligation.is_initialized {
+            args.account(user_obligation_key, 72u32, 96u32)
+                .plaintext_u8(1) // is_initialized = true
         } else {
-            args.encrypted_u128([0u8; 32]).plaintext_u8(0)
+            args.encrypted_u128([0u8; 32]) // deposit
+                .encrypted_u128([0u8; 32]) // debt
+                .encrypted_u128([0u8; 32]) // internal_balance
+                .plaintext_u8(0) // is_initialized = false
         };
 
         args.build()

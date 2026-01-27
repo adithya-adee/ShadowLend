@@ -517,6 +517,11 @@ pub mod shadowlend_program {
         crate::instructions::admin::init_repay_comp_def_handler(ctx)
     }
 
+    /// Initializes liquidate computation definition
+    pub fn init_liquidate_comp_def(ctx: Context<InitLiquidateCompDef>) -> Result<()> {
+        crate::instructions::admin::init_liquidate_comp_def_handler(ctx)
+    }
+
     /// Closes the lending pool (admin only)
     pub fn close_pool(ctx: Context<ClosePool>) -> Result<()> {
         crate::instructions::close_pool_handler(ctx)

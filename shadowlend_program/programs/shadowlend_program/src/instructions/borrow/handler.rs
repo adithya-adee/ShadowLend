@@ -81,7 +81,7 @@ pub fn borrow_handler(
                 },
                 CallbackAccount {
                     pubkey: pool.key(),
-                    is_writable: false,
+                    is_writable: true,
                 },
                 CallbackAccount {
                     pubkey: ctx.accounts.user_token_account.key(),

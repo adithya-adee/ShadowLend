@@ -135,3 +135,36 @@ pub fn init_repay_comp_def_handler(ctx: Context<InitRepayCompDef>) -> Result<()>
     )?;
     Ok(())
 }
+
+// ============================================================
+// Liquidate Computation Definition
+// ============================================================
+
+#[init_computation_definition_accounts("liquidate", authority)]
+#[derive(Accounts)]
+pub struct InitLiquidateCompDef<'info> {
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    #[account(mut, address = derive_mxe_pda!())]
+    pub mxe_account: Box<Account<'info, MXEAccount>>,
+
+    #[account(mut)]
+    /// CHECK: Checked by Arcium program
+    pub comp_def_account: UncheckedAccount<'info>,
+
+    pub arcium_program: Program<'info, Arcium>,
+    pub system_program: Program<'info, System>,
+}
+
+pub fn init_liquidate_comp_def_handler(ctx: Context<InitLiquidateCompDef>) -> Result<()> {
+    init_comp_def(
+        ctx.accounts,
+        Some(CircuitSource::OffChain(OffChainCircuitSource {
+            source: "https://qisejajribahvwowmbef.supabase.co/storage/v1/object/public/Circuits/liquidate.arcis".to_string(),
+            hash: circuit_hash!("liquidate"),
+        })),
+        None,
+    )?;
+    Ok(())
+}

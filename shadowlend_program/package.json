@@ -10,6 +10,7 @@
     "test:deposit": "ts-node scripts/test/test-deposit.ts",
     "test:borrow": "ts-node scripts/test/test-borrow.ts",
     "test:withdraw": "ts-node scripts/test/test-withdraw.ts",
+    "test:liquidate": "ts-node scripts/test/test-liquidate.ts",
     "test:repay": "ts-node scripts/test/test-repay.ts",
     "test:all": "ts-node scripts/test/run-all-tests.ts",
     "devnet:setup": "NETWORK=devnet npm run setup:all",

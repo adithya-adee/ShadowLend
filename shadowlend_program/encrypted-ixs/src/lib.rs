@@ -136,4 +136,64 @@ mod circuits {
         };
         current_debt.owner.from_arcis(new_debt)
     }
+
+    /// Liquidate circuit: Checks if user is under-collateralized and liquidates if true.
+    /// Returns: (NewEncCollateral, NewEncDebt, IsLiquidatable(0/1), SeizedCollateral, RepaidDebt)
+    #[instruction]
+    pub fn liquidate(
+        amount: u64,
+        current_collateral: Enc<Shared, u128>,
+        current_debt: Enc<Shared, u128>,
+        liquidation_threshold: u64,
+        is_collateral_initialized: u8,
+        is_debt_initialized: u8
+    ) -> (Enc<Shared, u128>, Enc<Shared, u128>, u64, u64, u64) {
+        let col = if is_collateral_initialized == 0 {
+            0
+        } else {
+            current_collateral.to_arcis()
+        };
+        let debt = if is_debt_initialized == 0 {
+            0
+        } else {
+            current_debt.to_arcis()
+        };
+
+        // Health Check: Is Debt * 10000 >= Collateral * Threshold?
+        // Standard DeFi: If HF < 1.0, liquidate.
+        // HF = (Col * Threshold) / Debt.
+        // If (Col * Threshold) < (Debt * 10000), HF < 1.0, user is liquidatable.
+        let lhs = col * (liquidation_threshold as u128);
+        let rhs = debt * 10000;
+        
+        // Liquidatable if Collateral Value (adjusted by threshold) is LESS than Debt Value
+        let is_liquidatable = lhs < rhs;
+
+        // Calculate seizure amounts (if liquidatable)
+        // Seized Collateral = Repay Amount (Assuming 1:1 price for MVP)
+        // Cap seizure at total collateral
+        let amount_u128 = amount as u128;
+        let actual_seize = if amount_u128 > col { col } else { amount_u128 };
+        
+        // Calculate Repaid Debt
+        // Cap repayment at total debt
+        let actual_repay = if amount_u128 > debt { debt } else { amount_u128 };
+
+        // New Balances
+        let new_col = if is_liquidatable { col - actual_seize } else { col };
+        let new_debt = if is_liquidatable { debt - actual_repay } else { debt };
+
+        // Output Values
+        let is_liq_u64 = if is_liquidatable { 1u64 } else { 0u64 };
+        let out_seize = if is_liquidatable { actual_seize } else { 0 };
+        let out_repay = if is_liquidatable { actual_repay } else { amount_u128 }; 
+
+        (
+            current_collateral.owner.from_arcis(new_col),
+            current_debt.owner.from_arcis(new_debt),
+            is_liq_u64.reveal(),
+            (out_seize as u64).reveal(),
+            (out_repay as u64).reveal()
+        )
+    }
 }

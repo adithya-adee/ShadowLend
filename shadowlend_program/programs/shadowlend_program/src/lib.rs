@@ -89,9 +89,9 @@ pub mod shadowlend_program {
             &ctx.accounts.cluster_account,
             &ctx.accounts.computation_account,
         ) {
-            Ok(DepositOutput { field_0 }) => {
+            Ok(o) => { // Changed to 'o' to keep the full struct
                 msg!("Output verified successfully.");
-                field_0
+                o
             }
             Err(e) => {
                 msg!("Deposit verification failed: {}", e);
@@ -105,14 +105,17 @@ pub mod shadowlend_program {
             user_obligation.state_nonce
         );
 
-        // Flatten 3 ciphertexts into [u8; 96]
-        let c = result.ciphertexts;
+        // Access UserState fields from result.field_0 which is SharedEncryptedStruct
+        let state = result.field_0; 
+        
+        // Unpack ciphertexts: [deposit, debt, internal]
+        let c = &state.ciphertexts;
         if c.len() >= 3 {
              user_obligation.encrypted_state[0..32].copy_from_slice(&c[0]);
              user_obligation.encrypted_state[32..64].copy_from_slice(&c[1]);
              user_obligation.encrypted_state[64..96].copy_from_slice(&c[2]);
         }
-        
+
         user_obligation.is_initialized = true;
         user_obligation.state_nonce += 1;
 
@@ -176,8 +179,9 @@ pub mod shadowlend_program {
             }
         };
 
-        let inner = result.field_0; // Enc<Shared, UserState>
-        let approved = result.field_1; // u8
+        let inner = result.field_0; 
+        let state = inner.field_0;
+        let approved = inner.field_1;
 
         msg!(
             "Circuit result - Approved: {}",
@@ -191,12 +195,14 @@ pub mod shadowlend_program {
                 user_obligation.state_nonce
             );
 
-            let c = inner.ciphertexts;
+            let c = &state.ciphertexts;
+            
             if c.len() >= 3 {
-                user_obligation.encrypted_state[0..32].copy_from_slice(&c[0]);
-                user_obligation.encrypted_state[32..64].copy_from_slice(&c[1]);
-                user_obligation.encrypted_state[64..96].copy_from_slice(&c[2]);
+                 user_obligation.encrypted_state[0..32].copy_from_slice(&c[0]);
+                 user_obligation.encrypted_state[32..64].copy_from_slice(&c[1]);
+                 user_obligation.encrypted_state[64..96].copy_from_slice(&c[2]);
             }
+
             user_obligation.state_nonce += 1;
 
             msg!(
@@ -260,19 +266,22 @@ pub mod shadowlend_program {
             }
         };
 
-        let inner_state = result.field_0;
-        let approved = result.field_1;
-        let amount = result.field_2;
+        let inner = result.field_0;
+        let state = inner.field_0;
+        let approved = inner.field_1;
+        let amount = inner.field_2;
 
         if approved == 1 {
             let user_obligation = &mut ctx.accounts.user_obligation;
             
-            let c = inner_state.ciphertexts;
+            let c = &state.ciphertexts;
+
             if c.len() >= 3 {
                 user_obligation.encrypted_state[0..32].copy_from_slice(&c[0]);
                 user_obligation.encrypted_state[32..64].copy_from_slice(&c[1]);
                 user_obligation.encrypted_state[64..96].copy_from_slice(&c[2]);
             }
+
             user_obligation.state_nonce += 1;
 
             // Vault PDA signs the transfer
@@ -345,7 +354,7 @@ pub mod shadowlend_program {
             &ctx.accounts.cluster_account,
             &ctx.accounts.computation_account,
         ) {
-            Ok(RepayOutput { field_0 }) => field_0,
+            Ok(o) => o, // Changed to 'o' to keep the full struct
             Err(e) => {
                 msg!("Repay verification failed: {}", e);
                 return Err(ErrorCode::AbortedComputation.into());
@@ -353,13 +362,15 @@ pub mod shadowlend_program {
         };
 
         let user_obligation = &mut ctx.accounts.user_obligation;
+        let state = result.field_0;
         
-        let c = result.ciphertexts;
+        let c = &state.ciphertexts;
         if c.len() >= 3 {
              user_obligation.encrypted_state[0..32].copy_from_slice(&c[0]);
              user_obligation.encrypted_state[32..64].copy_from_slice(&c[1]);
              user_obligation.encrypted_state[64..96].copy_from_slice(&c[2]);
         }
+
         user_obligation.is_initialized = true; // Ensure flag is set on first interaction if any
         user_obligation.state_nonce += 1;
 
@@ -407,23 +418,25 @@ pub mod shadowlend_program {
             }
         };
 
-        let inner_state = result.field_0; // Enc<Shared, UserState>
+        let inner = result.field_0;
+        let state = inner.field_0; 
         
         // Encrypted outputs are wrapped in structs with 'ciphertexts' field
-        let c = inner_state.ciphertexts;
-
-        let is_liquidatable = result.field_1; // 1 or 0
-        let seized_collateral = result.field_2;
-        let repaid_amount = result.field_3; // Echoed back amount
+        let is_liquidatable = inner.field_1; // 1 or 0
+        let seized_collateral = inner.field_2;
+        let repaid_amount = inner.field_3; // Echoed back amount
 
         let user_obligation = &mut ctx.accounts.user_obligation;
         
+
         // Always update state (nonce, encrypted balances)
+        let c = &state.ciphertexts;
         if c.len() >= 3 {
             user_obligation.encrypted_state[0..32].copy_from_slice(&c[0]);
             user_obligation.encrypted_state[32..64].copy_from_slice(&c[1]);
             user_obligation.encrypted_state[64..96].copy_from_slice(&c[2]);
         }
+
         user_obligation.state_nonce += 1;
 
         if is_liquidatable == 1 {
@@ -559,22 +572,24 @@ pub mod shadowlend_program {
         };
 
         // Output: (NewInternal, Approved(u8), Amount(u64))
-        // Parse circuit results: (Enc<Shared, UserState>, u8, u64)
+        // Parse circuit results: (Enc<Shared, u128>, u8, u64)
         
-        let inner_state = result.field_0; 
-        let approved = result.field_1; 
-        let amount = result.field_2; 
+        let inner = result.field_0; 
+        let state = inner.field_0; 
+        let approved = inner.field_1; 
+        let amount = inner.field_2; 
 
         if approved == 1 {
             let user_obligation = &mut ctx.accounts.user_obligation;
             
             // Update the confidential balance on the user obligation
-            let c = inner_state.ciphertexts;
+            let c = &state.ciphertexts;
             if c.len() >= 3 {
                 user_obligation.encrypted_state[0..32].copy_from_slice(&c[0]);
                 user_obligation.encrypted_state[32..64].copy_from_slice(&c[1]);
                 user_obligation.encrypted_state[64..96].copy_from_slice(&c[2]);
             }
+
             user_obligation.state_nonce += 1;
 
             // Prepare PDA seeds for the borrow vault to sign the outgoing transfer

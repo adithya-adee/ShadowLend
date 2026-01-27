@@ -47,36 +47,21 @@ pub fn liquidate_handler(
         .plaintext_u128(user_nonce);
 
     // Inputs: Encrypted Deposit, Encrypted Borrow, Liquidation Threshold
-    // Offset 72 = Encrypted Deposit
-    args = if user_obligation.encrypted_deposit != [0u8; 32] {
-        args.account(user_obligation.key(), 72u32, 32u32)
+    // Inputs: Encrypted UserState, Liquidation Threshold, Flags
+    // Offset 72 starts at `encrypted_state`. Length is 96 bytes.
+    args = if user_obligation.is_initialized {
+        args.account(user_obligation.key(), 72u32, 96u32)
     } else {
         args.encrypted_u128([0u8; 32])
-    };
-
-    // Offset 104 = Encrypted Borrow
-    args = args.x25519_pubkey(user_pubkey).plaintext_u128(user_nonce);
-    args = if user_obligation.encrypted_borrow != [0u8; 32] {
-        args.account(user_obligation.key(), 104u32, 32u32)
-    } else {
-        args.encrypted_u128([0u8; 32])
+            .encrypted_u128([0u8; 32])
+            .encrypted_u128([0u8; 32])
     };
 
     // Threshold
     args = args.plaintext_u64(pool.liquidation_threshold as u64);
 
-    // Flags
-    args = if user_obligation.encrypted_deposit != [0u8; 32] {
-        args.plaintext_u8(1)
-    } else {
-        args.plaintext_u8(0)
-    };
-
-    args = if user_obligation.encrypted_borrow != [0u8; 32] {
-        args.plaintext_u8(1)
-    } else {
-        args.plaintext_u8(0)
-    };
+    // Flags (is_initialized)
+    args = args.plaintext_u8(if user_obligation.is_initialized { 1 } else { 0 });
 
     ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
 

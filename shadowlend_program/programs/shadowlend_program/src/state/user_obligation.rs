@@ -9,17 +9,12 @@ pub struct UserObligation {
     /// Associated lending pool
     pub pool: Pubkey,
 
-    /// Encrypted collateral amount - Enc<Shared, u128>
-    /// This is a 32-byte ciphertext from Arcium MPC
-    pub encrypted_deposit: [u8; 32],
+    /// Encrypted state containing [deposit (32), borrow (32), internal_balance (32)]
+    /// Total: 96 bytes of Arcium ciphertexts
+    pub encrypted_state: [u8; 96],
 
-    /// Encrypted debt amount - Enc<Shared, u128>
-    /// This is a 32-byte ciphertext from Arcium MPC
-    pub encrypted_borrow: [u8; 32],
-
-    /// Encrypted internal credit balance - Enc<Shared, u128>
-    /// Represents funds borrowed but not yet withdrawn (Asset)
-    pub encrypted_internal_balance: [u8; 32],
+    /// Initialization flag to avoid separate boolean checks
+    pub is_initialized: bool,
 
     /// Replay protection nonce (incremented each state update)
     pub state_nonce: u128,
@@ -31,4 +26,6 @@ pub struct UserObligation {
 impl UserObligation {
     /// Seed prefix for UserObligation PDA derivation
     pub const SEED_PREFIX: &'static [u8] = b"obligation";
+
+    pub const SPACE: usize = 8 + 32 + 32 + 96 + 1 + 16 + 1;
 }

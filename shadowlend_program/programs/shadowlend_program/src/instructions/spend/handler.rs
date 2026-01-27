@@ -23,14 +23,17 @@ pub fn spend_handler(
     args = args.x25519_pubkey(user_pubkey).plaintext_u128(user_nonce);
 
     // Encrypted internal balance retrieval from UserObligation
-    args = if user_obligation.encrypted_internal_balance != [0u8; 32] {
-        args.account(user_obligation.key(), 136u32, 32u32)
+    // Offset 72 starts at `encrypted_state`. Length is 96 bytes.
+    args = if user_obligation.is_initialized {
+        args.account(user_obligation.key(), 72u32, 96u32)
     } else {
         args.encrypted_u128([0u8; 32])
+            .encrypted_u128([0u8; 32])
+            .encrypted_u128([0u8; 32])
     };
 
     // Flag to indicate if internal balance state exists
-    args = args.plaintext_u8(if user_obligation.encrypted_internal_balance != [0u8; 32] { 1 } else { 0 });
+    args = args.plaintext_u8(if user_obligation.is_initialized { 1 } else { 0 });
     
     ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
 

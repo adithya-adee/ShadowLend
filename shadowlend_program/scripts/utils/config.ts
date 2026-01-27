@@ -118,6 +118,7 @@ export const icons = {
   warning: "⚠",
   info: "🛈",
   clock: "⏱",
+  skull: "💀",
 };
 
 export function logHeader(title: string): void {

@@ -74,15 +74,17 @@ mod circuits {
     }
 
     /// Borrow circuit: Checks health factor and updates debt if approved
+    /// Borrow circuit: Checks health factor and updates debt/internal balance if approved
     #[instruction]
     pub fn borrow(
-        amount: u64,
         collateral: Enc<Shared, u128>,
         current_debt: Enc<Shared, u128>,
+        current_internal_balance: Enc<Shared, u128>,
+        amount: Enc<Shared, u128>,
         ltv_bps: u64,
         is_collateral_initialized: u8,
         is_debt_initialized: u8,
-    ) -> (Enc<Shared, u128>, u8, u64) {
+    ) -> (Enc<Shared, u128>, Enc<Shared, u128>, u8) {
         let col = if is_collateral_initialized == 0 {
             0
         } else {
@@ -93,8 +95,20 @@ mod circuits {
         } else {
             current_debt.to_arcis()
         };
+        
+        // Internal balance logic: 
+        // If debt is initialized, internal balance exists (even if 0). 
+        // If not initialized, it's 0.
+        let internal = if is_debt_initialized == 0 {
+            0
+        } else {
+            current_internal_balance.to_arcis()
+        };
 
-        let new_debt = debt + amount as u128;
+        let amt = amount.to_arcis();
+
+        let new_debt = debt + amt;
+        let new_internal = internal + amt;
 
         // Optimized health check without division:
         // new_debt * 10000 <= col * ltv_bps
@@ -104,16 +118,15 @@ mod circuits {
         let approved = lhs <= rhs;
 
         let final_debt = if approved { new_debt } else { debt };
+        let final_internal = if approved { new_internal } else { internal };
 
         // Reveal the boolean as u8 (1 = approved, 0 = rejected)
         let approved_u8 = if approved { 1u8 } else { 0u8 };
-        // Pass through amount
-        let amount_out = amount;
 
         (
             current_debt.owner.from_arcis(final_debt),
+            current_internal_balance.owner.from_arcis(final_internal),
             approved_u8.reveal(),
-            amount_out.reveal(),
         )
     }
 
@@ -194,6 +207,39 @@ mod circuits {
             is_liq_u64.reveal(),
             (out_seize as u64).reveal(),
             (out_repay as u64).reveal()
+        )
+    }
+
+    /// Spend circuit: Publicly withdraws from internal balance.
+    /// Returns: (NewEncInternal, Approved(0/1), Amount)
+    #[instruction]
+    pub fn spend(
+        amount: u64,
+        current_internal_balance: Enc<Shared, u128>,
+        is_initialized: u8,
+    ) -> (Enc<Shared, u128>, u8, u64) {
+        let internal = if is_initialized == 0 {
+            0
+        } else {
+            current_internal_balance.to_arcis()
+        };
+
+        let amount_u128 = amount as u128;
+        
+        let sufficient = internal >= amount_u128;
+        
+        let new_internal = if sufficient {
+            internal - amount_u128
+        } else {
+            internal
+        };
+
+        let approved_u8 = if sufficient { 1u8 } else { 0u8 };
+
+        (
+            current_internal_balance.owner.from_arcis(new_internal),
+            approved_u8.reveal(),
+            amount,
         )
     }
 }

@@ -30,5 +30,5 @@ pub struct Pool {
 
 impl Pool {
     /// Seed prefix for Pool PDA derivation
-    pub const SEED_PREFIX: &'static [u8] = b"pool";
+    pub const SEED_PREFIX: &'static [u8] = b"pool_v2";
 }

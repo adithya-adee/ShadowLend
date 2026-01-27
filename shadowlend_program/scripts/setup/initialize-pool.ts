@@ -54,7 +54,7 @@ async function initializePool() {
 
     // Derive pool PDA
     const [poolPda, poolBump] = PublicKey.findProgramAddressSync(
-      [Buffer.from("pool")],
+      [Buffer.from("pool_v2")],
       programId
     );
 

@@ -47,13 +47,15 @@ pub fn repay_handler(
         .x25519_pubkey(user_pubkey)
         .plaintext_u128(user_nonce);
 
-    // Offset 104 = 8 (discriminator) + 32 (user) + 32 (pool) + 32 (encrypted_deposit)
-    // Offset 104 = 8 (discriminator) + 32 (user) + 32 (pool) + 32 (encrypted_deposit)
-    args = if user_obligation.encrypted_borrow != [0u8; 32] {
-        args.account(user_obligation.key(), 104u32, 32u32)
+    // Offset 72 starts at `encrypted_state`. Length is 96 bytes.
+    args = if user_obligation.is_initialized {
+        args.account(user_obligation.key(), 72u32, 96u32)
             .plaintext_u8(1)
     } else {
-        args.encrypted_u128([0u8; 32]).plaintext_u8(0)
+        args.encrypted_u128([0u8; 32])
+            .encrypted_u128([0u8; 32])
+            .encrypted_u128([0u8; 32])
+            .plaintext_u8(0)
     };
 
     ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;

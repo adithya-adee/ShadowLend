@@ -41,7 +41,7 @@ mod circuits {
         is_initialized: u8, // Now just one flag for the whole state struct
     ) -> (Enc<Shared, UserState>, u8, u64) {
         let state = if is_initialized == 0 {
-             UserState {
+            UserState {
                 deposit: 0,
                 debt: 0,
                 internal: 0,
@@ -68,7 +68,7 @@ mod circuits {
         let approved = sufficient_collateral && health_ok;
 
         let final_deposit = if approved { new_deposit } else { state.deposit };
-        
+
         let mut final_state = state;
         final_state.deposit = final_deposit;
 
@@ -93,7 +93,7 @@ mod circuits {
         is_initialized: u8,
     ) -> (Enc<Shared, UserState>, u8) {
         let state = if is_initialized == 0 {
-             UserState {
+            UserState {
                 deposit: 0,
                 debt: 0,
                 internal: 0,
@@ -120,7 +120,11 @@ mod circuits {
 
         let mut final_state = state;
         final_state.debt = if approved { new_debt } else { current_debt };
-        final_state.internal = if approved { new_internal } else { current_internal };
+        final_state.internal = if approved {
+            new_internal
+        } else {
+            current_internal
+        };
 
         // Reveal the boolean as u8 (1 = approved, 0 = rejected)
         let approved_u8 = if approved { 1u8 } else { 0u8 };
@@ -139,7 +143,7 @@ mod circuits {
         is_initialized: u8,
     ) -> Enc<Shared, UserState> {
         let state = if is_initialized == 0 {
-             UserState {
+            UserState {
                 deposit: 0,
                 debt: 0,
                 internal: 0,
@@ -153,7 +157,7 @@ mod circuits {
         } else {
             state.debt - amount as u128
         };
-        
+
         let mut final_state = state;
         final_state.debt = new_debt;
 
@@ -167,10 +171,10 @@ mod circuits {
         amount: u64,
         user_state: Enc<Shared, UserState>,
         liquidation_threshold: u64,
-        is_initialized: u8
+        is_initialized: u8,
     ) -> (Enc<Shared, UserState>, u64, u64, u64) {
         let state = if is_initialized == 0 {
-             UserState {
+            UserState {
                 deposit: 0,
                 debt: 0,
                 internal: 0,
@@ -185,7 +189,7 @@ mod circuits {
         // If (Col * Threshold) < (Debt * 10000), HF < 1.0, user is liquidatable.
         let lhs = state.deposit * (liquidation_threshold as u128);
         let rhs = state.debt * 10000;
-        
+
         // Liquidatable if Collateral Value (adjusted by threshold) is LESS than Debt Value
         let is_liquidatable = lhs < rhs;
 
@@ -193,11 +197,19 @@ mod circuits {
         // Seized Collateral = Repay Amount (Assuming 1:1 price for MVP)
         // Cap seizure at total collateral
         let amount_u128 = amount as u128;
-        let actual_seize = if amount_u128 > state.deposit { state.deposit } else { amount_u128 };
-        
+        let actual_seize = if amount_u128 > state.deposit {
+            state.deposit
+        } else {
+            amount_u128
+        };
+
         // Calculate Repaid Debt
         // Cap repayment at total debt
-        let actual_repay = if amount_u128 > state.debt { state.debt } else { amount_u128 };
+        let actual_repay = if amount_u128 > state.debt {
+            state.debt
+        } else {
+            amount_u128
+        };
 
         // Capture values before move
         let current_deposit = state.deposit;
@@ -206,19 +218,31 @@ mod circuits {
         let mut final_state = state;
 
         // New Balances
-        final_state.deposit = if is_liquidatable { current_deposit - actual_seize } else { current_deposit };
-        final_state.debt = if is_liquidatable { current_debt - actual_repay } else { current_debt };
+        final_state.deposit = if is_liquidatable {
+            current_deposit - actual_seize
+        } else {
+            current_deposit
+        };
+        final_state.debt = if is_liquidatable {
+            current_debt - actual_repay
+        } else {
+            current_debt
+        };
 
         // Output Values
         let is_liq_u64 = if is_liquidatable { 1u64 } else { 0u64 };
         let out_seize = if is_liquidatable { actual_seize } else { 0 };
-        let out_repay = if is_liquidatable { actual_repay } else { amount_u128 }; 
+        let out_repay = if is_liquidatable {
+            actual_repay
+        } else {
+            amount_u128
+        };
 
         (
             user_state.owner.from_arcis(final_state),
             is_liq_u64.reveal(),
             (out_seize as u64).reveal(),
-            (out_repay as u64).reveal()
+            (out_repay as u64).reveal(),
         )
     }
 
@@ -241,12 +265,12 @@ mod circuits {
         };
 
         let amount_u128 = amount as u128;
-        
+
         // Capture before move
         let current_internal = state.internal;
-        
+
         let sufficient = current_internal >= amount_u128;
-        
+
         let new_internal = if sufficient {
             current_internal - amount_u128
         } else {
@@ -254,7 +278,7 @@ mod circuits {
         };
 
         let mut final_state = state;
-        final_state.internal = new_internal; 
+        final_state.internal = new_internal;
 
         let approved_u8 = if sufficient { 1u8 } else { 0u8 };
 

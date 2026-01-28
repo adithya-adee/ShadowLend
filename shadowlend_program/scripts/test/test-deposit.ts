@@ -380,13 +380,13 @@ async function testDeposit() {
       } else {
           // Check if encrypted deposit is updated
           if (finalObligationAccount) {
-              const encDeposit = finalObligationAccount.encryptedDeposit;
-              const isZero = Array.isArray(encDeposit) 
-                 ? encDeposit.every((b: number) => b === 0)
-                 : Buffer.from(encDeposit).every(b => b === 0);
+              const encState = finalObligationAccount.encryptedState;
+              const encDeposit = Buffer.from(encState).slice(0, 32);
+              
+              const isZero = encDeposit.every((b: number) => b === 0);
                  
               if (isZero) {
-                  logWarning("Encrypted Deposit is still all zeros despite nonce update!");
+                  logWarning("Encrypted Deposit (first 32 bytes) is still all zeros despite nonce update!");
               } else {
                   logSuccess("Encrypted key updated with non-zero ciphertext.");
               }
@@ -402,23 +402,14 @@ async function testDeposit() {
         logEntry("User", obligationAccount.user.toBase58(), icons.key);
         logEntry("Pool", obligationAccount.pool.toBase58(), icons.link);
         
-        // Handle potentially encrypted fields more gracefully if types differ
-        const encDeposit = obligationAccount.encryptedDeposit;
-        const encBorrow = obligationAccount.encryptedBorrow;
+        const encState = Buffer.from(obligationAccount.encryptedState);
+        const encDeposit = encState.slice(0, 32);
+        const encBorrow = encState.slice(32, 64);
+        const encInternal = encState.slice(64, 96);
         
-        logEntry("Encrypted Deposit", 
-            Array.isArray(encDeposit) || Buffer.isBuffer(encDeposit) 
-            ? Buffer.from(encDeposit as any).toString('hex').substring(0, 32) + "..." 
-            : String(encDeposit), 
-            icons.key
-        );
-        
-        logEntry("Encrypted Borrow", 
-            Array.isArray(encBorrow) || Buffer.isBuffer(encBorrow) 
-            ? Buffer.from(encBorrow as any).toString('hex').substring(0, 32) + "..." 
-            : String(encBorrow), 
-            icons.key
-        );
+        logEntry("Encrypted Deposit", encDeposit.toString('hex').substring(0, 32) + "...", icons.key);
+        logEntry("Encrypted Borrow", encBorrow.toString('hex').substring(0, 32) + "...", icons.key);
+        logEntry("Encrypted Internal", encInternal.toString('hex').substring(0, 32) + "...", icons.key);
         
       } catch (error) {
         logError("Failed to decode obligation account data", error);

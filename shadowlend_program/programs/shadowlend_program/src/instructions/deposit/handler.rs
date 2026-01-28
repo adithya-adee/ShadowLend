@@ -28,8 +28,10 @@ pub fn deposit_handler(
     require!(amount > 0, ErrorCode::InvalidAmount);
 
     let user_obligation_key = ctx.accounts.user_obligation.key();
+    let mut is_initialized = true;
 
-    let args = {
+    // Handle user obligation initialization
+    {
         let user_obligation = &mut ctx.accounts.user_obligation;
 
         if user_obligation.user == Pubkey::default() {
@@ -37,28 +39,21 @@ pub fn deposit_handler(
             user_obligation.pool = ctx.accounts.pool.key();
             user_obligation.encrypted_state = [0u8; 96];
             user_obligation.is_initialized = false;
-            user_obligation.state_nonce = 0;
+            user_obligation.state_nonce = 0u128;
             user_obligation.bump = ctx.bumps.user_obligation;
+
+            is_initialized = false;
         }
+    }
 
-        let mut args = ArgBuilder::new()
-            .plaintext_u64(amount)
-            .x25519_pubkey(user_pubkey)
-            .plaintext_u128(user_nonce);
-
-        // Offset 72 starts at `encrypted_state`. Length is 96 bytes.
-        args = if user_obligation.is_initialized {
-            args.account(user_obligation_key, 72u32, 96u32)
-                .plaintext_u8(1) // is_initialized = true
-        } else {
-            args.encrypted_u128([0u8; 32]) // deposit
-                .encrypted_u128([0u8; 32]) // debt
-                .encrypted_u128([0u8; 32]) // internal_balance
-                .plaintext_u8(0) // is_initialized = false
-        };
-
-        args.build()
-    };
+    // Build arguments for Arcium computation
+    let args = ArgBuilder::new()
+        .plaintext_u64(amount)
+        .x25519_pubkey(user_pubkey)
+        .plaintext_u128(user_nonce)
+        .account(user_obligation_key, 72u32, 96u32)
+        .plaintext_u8(if is_initialized { 1 } else { 0 })
+        .build();
 
     ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
 
@@ -75,7 +70,10 @@ pub fn deposit_handler(
 
     // Update global deposit counter
     let pool = &mut ctx.accounts.pool;
-    pool.total_deposits = pool.total_deposits.checked_add(amount).ok_or(ErrorCode::MathOverflow)?;
+    pool.total_deposits = pool
+        .total_deposits
+        .checked_add(amount)
+        .ok_or(ErrorCode::MathOverflow)?;
 
     queue_computation(
         ctx.accounts,

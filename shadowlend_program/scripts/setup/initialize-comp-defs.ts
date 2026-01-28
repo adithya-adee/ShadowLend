@@ -76,6 +76,7 @@ async function initializeComputationDefinitions() {
       { name: "borrow", method: "initBorrowCompDef" },
       { name: "repay", method: "initRepayCompDef" },
       { name: "liquidate", method: "initLiquidateCompDef" },
+      { name: "spend", method: "initSpendCompDef" },
     ];
     
     const computationDefinitions: Record<string, string> = {};

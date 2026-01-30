@@ -1,6 +1,5 @@
 use crate::error::ErrorCode;
-use crate::state::{Pool, UserObligation};
-use anchor_lang::prelude::UncheckedAccount;
+use crate::state::UserObligation;
 use anchor_lang::prelude::*;
 use arcium_anchor::prelude::*;
 
@@ -34,12 +33,5 @@ pub struct BorrowCallback<'info> {
         bump = user_obligation.bump
     )]
     pub user_obligation: Box<Account<'info, UserObligation>>,
-
-    #[account(
-        mut,
-        seeds = [Pool::SEED_PREFIX],
-        bump = pool.bump
-    )]
-    pub pool: Box<Account<'info, Pool>>,
 
 }

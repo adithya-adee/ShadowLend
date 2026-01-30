@@ -1,8 +1,6 @@
 import { Wallet, Program, BN } from "@coral-xyz/anchor";
 import { PublicKey, SystemProgram } from "@solana/web3.js";
-import { TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, getAssociatedTokenAddress, createAssociatedTokenAccountInstruction, mintTo, getAccount } from "@solana/spl-token";
-import { generateKeyPairSync } from "crypto";
-import chalk from "chalk";
+
 import { 
   createProvider, 
   getNetworkConfig, 
@@ -18,367 +16,190 @@ import {
   icons 
 } from "../utils/config";
 import { getWalletKeypair, loadDeployment } from "../utils/deployment";
-import { getMxeAccount, getArciumProgramInstance, generateComputationOffset, checkMxeKeysSet, waitForComputationFinalization } from "../utils/arcium";
-import { getCompDefAccOffset, getCompDefAccAddress, getClusterAccAddress, getComputationAccAddress, getExecutingPoolAccAddress, getMempoolAccAddress, getFeePoolAccAddress, getClockAccAddress, getArciumProgramId } from "@arcium-hq/client";
+import { 
+    getMxeAccount, 
+    checkMxeKeysSet, 
+    generateComputationOffset 
+} from "../utils/arcium";
+import { 
+    getCompDefAccOffset, 
+    getCompDefAccAddress, 
+    getClusterAccAddress, 
+    getComputationAccAddress, 
+    getExecutingPoolAccAddress, 
+    getMempoolAccAddress, 
+    getFeePoolAccAddress, 
+    getClockAccAddress, 
+    getArciumProgramId,
+    getMXEPublicKey,
+    RescueCipher,
+    x25519
+} from "@arcium-hq/client";
+import { getOrCreateX25519Key } from "../utils/keys";
+import { PerformanceTracker } from "../utils/performance";
 import * as idl from "../../target/idl/shadowlend_program.json";
 
+const perf = new PerformanceTracker();
+
 /**
- * Test borrow instruction
+ * Main Test Execution Function for Borrow Instruction
  */
-async function testBorrow() {
-  try {
-    const config = getNetworkConfig();
-    logHeader("Test: Borrow Instruction");
-
-    // Load wallet
-    const walletKeypair = getWalletKeypair();
-    const wallet = new Wallet(walletKeypair);
-    
-    logSection("Configuration");
-    logEntry("Network", config.name, icons.sparkle);
-    logEntry("Wallet", wallet.publicKey.toBase58(), icons.key);
-
-    // Create provider
-    const provider = createProvider(wallet, config);
-
-    // Load deployment
-    const deployment = loadDeployment();
-    if (!deployment || !deployment.programId || !deployment.poolAddress) {
-      throw new Error("Deployment not found. Run setup scripts first.");
-    }
-
-    if (!deployment.borrowMint) {
-      throw new Error("Borrow mint not found in deployment. Run initialize-pool first.");
-    }
-
-    const programId = new PublicKey(deployment.programId);
-    const poolPda = new PublicKey(deployment.poolAddress);
-    const borrowMint = new PublicKey(deployment.borrowMint);
-
-    logEntry("Program ID", programId.toBase58(), icons.folder);
-    logEntry("Pool", poolPda.toBase58(), icons.link);
-    logEntry("Borrow Mint", borrowMint.toBase58(), icons.key);
-
-    // Load program
-    const program = await loadProgram(provider, programId, idl) as Program;
-
-    // Derive PDAs
-    const [userObligation] = PublicKey.findProgramAddressSync(
-      [
-        Buffer.from("obligation"), // Match seed prefix from lib.rs/state.rs
-        wallet.publicKey.toBuffer(),
-        poolPda.toBuffer(),
-      ],
-      programId
-    );
-
-    const [borrowVault] = PublicKey.findProgramAddressSync(
-      [Buffer.from("borrow_vault"), poolPda.toBuffer()],
-      programId
-    );
-
-    const [signPdaAccount] = PublicKey.findProgramAddressSync(
-      [Buffer.from("ArciumSignerAccount")],
-      programId
-    );
-
-    logSection("Account Derivation");
-    logEntry("User Obligation", userObligation.toBase58(), icons.link);
-    logEntry("Borrow Vault", borrowVault.toBase58(), icons.link);
-    logEntry("Sign PDA Account", signPdaAccount.toBase58(), icons.link);
-
-    // Get user token account for receiving borrowed tokens
-    const userTokenAccount = await getAssociatedTokenAddress(
-      borrowMint,
-      wallet.publicKey
-    );
-    logEntry("User Token Account", userTokenAccount.toBase58(), icons.key);
-
-    // Check if user has deposited collateral (obligation must exist)
-    // We will initialize it via deposit if missing/empty in Step 1 below
-
-    // Test parameters
-    const borrowAmountHash = Array.from(Buffer.alloc(32, 1)); // Dummy encrypted amount (32 bytes)
-    const computationOffset = generateComputationOffset();
-
-    // Use persistent X25519 keypair for Arcium context
-    const { getOrCreateX25519Key } = await import("../utils/keys");
-    const { publicKey: userPubkeyBytes } = getOrCreateX25519Key();
-    const userPubkey = Array.from(userPubkeyBytes);
-    // Determine deterministic nonce
-    let userNonce = new BN(0);
+async function runBorrowTest() {
     try {
-        const acc = await (program.account as any).userObligation.fetch(userObligation);
-        userNonce = acc.stateNonce;
-        logInfo(`Using stateNonce: ${userNonce.toString()}`);
-    } catch (e) {
-        logInfo("User Obligation not initialized. Using nonce: 0");
-    }
+        logHeader("Test: Borrow Instruction");
+        perf.start("Total Execution");
 
-    // Verify MXE State
-    const isMxeReady = await checkMxeKeysSet(provider, programId);
-    if (!isMxeReady) {
-        logWarning("MXE keys are not set. Transaction may fail.");
-    }
+        perf.start("Setup");
+        const config = getNetworkConfig();
+        const walletKeypair = getWalletKeypair();
+        const wallet = new Wallet(walletKeypair);
+        const provider = createProvider(wallet, config);
 
-    // Get MXE and Arcium accounts
-    const mxeAccount = getMxeAccount(programId);
-    // const arciumProgram = getArciumProgramInstance(provider); // Unused
-    
-    // Arcium accounts
-    const mempoolAccount = getMempoolAccAddress(config.arciumClusterOffset);
-    const executingPool = getExecutingPoolAccAddress(config.arciumClusterOffset);
-    const computationAccount = getComputationAccAddress(config.arciumClusterOffset, computationOffset);
-    const clusterAccount = getClusterAccAddress(config.arciumClusterOffset);
+        logSection("Configuration");
+        logEntry("Network", config.name, icons.sparkle);
+        logEntry("Wallet", wallet.publicKey.toBase58(), icons.key);
 
-    // Comp Def for Borrow
-    const compDefOffsetBytes = getCompDefAccOffset("borrow");
-    const compDefOffset = Buffer.from(compDefOffsetBytes).readUInt32LE();
-    const compDefAccount = getCompDefAccAddress(programId, compDefOffset);
-
-    // System accounts
-    const poolAccount = getFeePoolAccAddress();
-    const clockAccount = getClockAccAddress();
-    const arciumProgramId = getArciumProgramId();
-
-    // Setup for checking balance change (moved up)
-    let initialBalance = 0n;
-    try {
-        const tokenInfo = await provider.connection.getTokenAccountBalance(userTokenAccount);
-        initialBalance = BigInt(new BN(tokenInfo.value.amount).toString());
-    } catch (e) {
-        // Token account might not exist yet
-        try {
-            const createAtaIx = (await import("@solana/spl-token")).createAssociatedTokenAccountInstruction(
-                wallet.publicKey,
-                userTokenAccount,
-                wallet.publicKey,
-                borrowMint
-            );
-            await provider.sendAndConfirm(new (await import("@solana/web3.js")).Transaction().add(createAtaIx));
-            logInfo("Created User ATA for borrow mint.");
-        } catch(err) {
-            // Might exist or failed
+        // Load Deployment
+        const deployment = loadDeployment();
+        if (!deployment || !deployment.programId || !deployment.poolAddress || !deployment.borrowMint) {
+            throw new Error("Invalid deployment state (missing pool or borrow mint). Please run setup scripts first.");
         }
-    }
-    logEntry("Initial Borrow Token Balance", initialBalance.toString(), icons.info);
+
+        const programId = new PublicKey(deployment.programId);
+        const poolPda = new PublicKey(deployment.poolAddress);
+        const borrowMint = new PublicKey(deployment.borrowMint);
+
+        logEntry("Program ID", programId.toBase58(), icons.folder);
+        logEntry("Pool", poolPda.toBase58(), icons.link);
+        logEntry("Borrow Mint", borrowMint.toBase58(), icons.key);
+
+        const program = await loadProgram(provider, programId, idl) as Program;
+        perf.end("Setup");
+
+        perf.start("Account Derivation");
+        const [userObligation] = PublicKey.findProgramAddressSync(
+            [Buffer.from("obligation"), wallet.publicKey.toBuffer(), poolPda.toBuffer()],
+            programId
+        );
+        const [signPdaAccount] = PublicKey.findProgramAddressSync(
+            [Buffer.from("ArciumSignerAccount")],
+            programId
+        );
+
+        // We also derive borrow vault just in case, though usually internal logic handles it
+        const [borrowVault] = PublicKey.findProgramAddressSync(
+            [Buffer.from("borrow_vault"), poolPda.toBuffer()],
+            programId
+        );
+
+        logEntry("User Obligation", userObligation.toBase58(), icons.link);
+        logEntry("Borrow Vault", borrowVault.toBase58(), icons.link);
+        perf.end("Account Derivation");
 
 
-    // --- EXECUTE DEPOSIT FIRST ---
-    logDivider();
-    logHeader("Step 1: Deposit Collateral");
-    const depositAmount = new BN(2_000_000); // 2M tokens to support multiple 500k borrows
-    const depositComputationOffset = generateComputationOffset();
-    
-    // Check if user has tokens for deposit
-    if (!deployment.collateralMint) throw new Error("Collateral mint missing");
-    const collateralMint = new PublicKey(deployment.collateralMint);
-    const [collateralVault] = PublicKey.findProgramAddressSync(
-        [Buffer.from("collateral_vault"), poolPda.toBuffer()],
-        programId
-    );
-     // User collateral ATA
-    const userCollateralAccount = await getAssociatedTokenAddress(collateralMint, wallet.publicKey);
+        const { publicKey: userPubkeyBytes, privateKey: userPrivKeyBytes } = getOrCreateX25519Key();
+        const userPubkey = Array.from(userPubkeyBytes);
 
-    // Load Admin Wallet (for funding)
-    const adminPath = require("path").join(process.env.HOME || "", ".config/solana/id.json");
-    const { loadKeypair } = require("../utils/deployment");
-    let adminWallet;
-    try {
-        adminWallet = loadKeypair(adminPath);
-        logEntry("Admin Wallet", adminWallet.publicKey.toBase58(), icons.key);
-    } catch (e) {
-        logWarning("Could not load Admin Wallet. Funding might fail if User/Vault needs tokens.");
-        // Fallback to wallet if admin not found (though unlikely to work for minting)
-        adminWallet = wallet.payer; 
-    }
-
-    // Helper to fund account
-    const fundAccount = async (targetAta: PublicKey, targetAmount: bigint, mint: PublicKey) => {
+        // Get nonce
+        let userNonce = new BN(0);
         try {
-            const currentObj = await getAccount(provider.connection, targetAta);
-            if (currentObj.amount >= targetAmount) {
-                // logInfo(`Account ${targetAta.toBase58()} has sufficient funds (${currentObj.amount}).`);
-                return; 
-            }
+            const acc = await (program.account as any).userObligation.fetch(userObligation);
+            userNonce = acc.stateNonce;
+            logInfo(`Current Obligation Nonce: ${userNonce.toString()}`);
             
-            const shortfall = targetAmount - currentObj.amount;
-            logInfo(`Funding ${targetAta.toBase58()} with ${shortfall} tokens...`);
-            
-            // Handle Native Mint (wSOL)
-            if (mint.toBase58() === "So11111111111111111111111111111111111111112") {
-                 logInfo("Detected Native Mint (wSOL). transfering SOL and syncing...");
-                 const solShortfall = shortfall; // 1:1 for wSOL
-                 
-                 // Transfer SOL to the ATA
-                 const tx = new (await import("@solana/web3.js")).Transaction().add(
-                     SystemProgram.transfer({
-                         fromPubkey: adminWallet.publicKey,
-                         toPubkey: targetAta,
-                         lamports: Number(solShortfall)
-                     }),
-                     (await import("@solana/spl-token")).createSyncNativeInstruction(targetAta)
-                 );
-                 
-                 await provider.sendAndConfirm(tx, [adminWallet]);
-                 logSuccess("Funded wSOL successfully.");
-                 return;
+            // Check if collateral exists approx (if encrypted state is non-zero)
+            const encState = Buffer.from(acc.encryptedState);
+            // First 32 bytes is deposited
+            const isDeposited = !encState.slice(0, 32).every(b => b === 0);
+            if (!isDeposited) {
+                logWarning("Warning: Encrypted Deposit appears to be zero/empty. Borrow might fail due to lack of collateral.");
+            } else {
+                logEntry("Collateral Status", "Likely Deposited", icons.checkmark);
             }
 
-            // Regular SPL Token Logic
-            // 1. Check Admin Balance
-            const adminAta = await getAssociatedTokenAddress(mint, adminWallet.publicKey);
-            let adminBalance = 0n;
-            try {
-                const adminAcc = await getAccount(provider.connection, adminAta);
-                adminBalance = adminAcc.amount;
-            } catch(e) {
-                // Admin ATA missing, create it
-                 await provider.sendAndConfirm(new (await import("@solana/web3.js")).Transaction().add(
-                    createAssociatedTokenAccountInstruction(adminWallet.publicKey, adminAta, adminWallet.publicKey, mint)
-                ), [adminWallet]);
-            }
-            
-            // 2. Mint to Admin if needed (Admin is likely Mint Authority)
-            if (adminBalance < shortfall) {
-                logInfo("Admin lacks tokens. Minting to Admin...");
-                try {
-                     await mintTo(provider.connection, adminWallet, mint, adminAta, adminWallet, Number(shortfall + 10_000_000n)); // Mint extra
-                } catch(e) {
-                     logWarning(`Failed to mint to admin: ${e}`);
-                }
-            }
-            
-            // 3. Transfer to Target
-            const { transfer } = await import("@solana/spl-token");
-            await transfer(
-                provider.connection,
-                adminWallet, // Payer
-                adminAta, // Source
-                targetAta, // Dest
-                adminWallet, // Owner
-                Number(shortfall)
-            );
-            logSuccess("Funding complete.");
-            
         } catch (e) {
-            logError("Funding failed", e);
-            throw e;
+            logWarning("User Obligation not initialized. Borrow will fail (No Account).");
+            throw new Error("User Obligation must exist (Run deposit test first).");
         }
-    };
+        perf.end("Data Prep");
 
-    // Ensure User Collateral ATA exists
-    try {
-        await getAccount(provider.connection, userCollateralAccount);
-    } catch {
-        logInfo("Creating User Collateral ATA...");
-        await provider.sendAndConfirm(new (await import("@solana/web3.js")).Transaction().add(
-             createAssociatedTokenAccountInstruction(wallet.publicKey, userCollateralAccount, wallet.publicKey, collateralMint)
-        ));
-    }
-    
-    // Fund User
-    await fundAccount(userCollateralAccount, BigInt(depositAmount.toString()), collateralMint);
-    
-    logInfo(`Depositing ${depositAmount.toString()}...`);
-    
-    // Deposit TX
-    await program.methods.deposit(
-        depositComputationOffset,
-        depositAmount,
-        userPubkey, 
-        userNonce
-    ).accountsPartial({
-        payer: wallet.publicKey,
-        signPdaAccount,
-        mxeAccount,
-        mempoolAccount,
-        executingPool,
-        computationAccount: getComputationAccAddress(config.arciumClusterOffset, depositComputationOffset),
-        compDefAccount: getCompDefAccAddress(programId, Buffer.from(getCompDefAccOffset("deposit")).readUInt32LE()),
-        clusterAccount,
-        poolAccount,
-        clockAccount,
-        pool: poolPda,
-        userObligation,
-        collateralMint,
-        userTokenAccount: userCollateralAccount,
-        collateralVault,
-        tokenProgram: TOKEN_PROGRAM_ID,
-        associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
-        systemProgram: SystemProgram.programId,
-        arciumProgram: arciumProgramId,
-    }).rpc();
-    
-    logSuccess("Deposit submitted. Transaction confirmed.");
-    logInfo("Polling for deposit finalization (callback)...");
-
-    const maxDepositRetries = 90;
-    let depositFinalized = false;
-    
-    for (let i = 0; i < maxDepositRetries; i++) {
-        try {
-            const currentAccount = await (program.account as any).userObligation.fetch(userObligation);
-            // Check if encrypted deposit is populated (non-zero)
-            const encDep = currentAccount.encryptedDeposit;
-            const isNonZero = !Buffer.from(encDep).every(b => b === 0);
-            
-            if (isNonZero) {
-                 console.log("");
-                 logSuccess("Deposit state updated (Encrypted Deposit verified)!");
-                 depositFinalized = true;
-                 break;
-            }
-        } catch (e) {
-            // Account might not exist yet instantly after tx or query error
+        // Arcium Checks
+        logSection("Arcium Setup");
+        const isMxeReady = await checkMxeKeysSet(provider, programId);
+        if (!isMxeReady) {
+            logWarning("MXE Keys not set! Transaction may fail.");
+            throw new Error("MXE Keys must be set to perform shared encryption.");
+        } else {
+            logEntry("MXE Status", "Ready", icons.checkmark);
         }
-        process.stdout.write(".");
-        await new Promise(r => setTimeout(r, 2000));
-    }
-    
-    if (!depositFinalized) {
-        logError("Timeout waiting for deposit callback.");
-        throw new Error("Deposit failed to finalize.");
-    }
 
-    logSuccess("Deposit finalized. Proceeding to borrow...");
+        perf.start("Encryption");
+        const borrowAmount = new BN(5000); // Actual amount to borrow
+        const computationOffset = generateComputationOffset();
+        
+        // 1. Get Cluster Public Key (Shared Key)
+        const mxePublicKey = await getMXEPublicKey(provider, programId);
+        if (!mxePublicKey) {
+            throw new Error("Failed to fetch MXE Public Key for encryption.");
+        }
 
+        // 2. Derive Shared Secret (ECDH: My Priv Key + Cluster Pub Key)
+        // If mxePublicKey is already Uint8Array, use it directly.
+        const clusterKeyBytes = (mxePublicKey instanceof Uint8Array) ? mxePublicKey : (mxePublicKey as any).toBytes();
+        const sharedSecret = x25519.getSharedSecret(userPrivKeyBytes, clusterKeyBytes);
 
-    // --- EXECUTE BORROW ---
-    logDivider();
-    logHeader("Step 2: Borrow");
+        // 3. Encrypt Amount using RescueCipher (Shared Encryption)
+        // Note: We use RescueCipher because user_nonce is u128 (16 bytes), matching Rescue nonce size.
+        const cipher = new RescueCipher(sharedSecret);
+        const nonceBuffer = userNonce.toArrayLike(Buffer, "le", 16);
+        
+        // Encrypt [borrowAmount]
+        const encryptedChunks = cipher.encrypt([BigInt(borrowAmount.toString())], nonceBuffer);
+        
+        if (encryptedChunks.length === 0) {
+            throw new Error("Encryption failed to produce output.");
+        }
+        const borrowAmountHash = encryptedChunks[0]; // First 32 bytes
 
-    logSection("Borrow Parameters");
-    logEntry("Amount", "Encrypted (32 bytes)", icons.arrow);
-    logEntry("Computation Offset", computationOffset.toString(), icons.clock);
-    logEntry("User Nonce", userNonce.toString(), icons.key);
+        logEntry("Borrow Amount", borrowAmount.toString(), icons.key);
+        logInfo(`Encrypted Borrow Amount (32 bytes): ${Buffer.from(borrowAmountHash).toString('hex').slice(0, 16)}...`);
+        perf.end("Encryption");
 
+        // Derive Arcium Accounts
+        const mxeAccount = getMxeAccount(programId);
+        const mempoolAccount = getMempoolAccAddress(config.arciumClusterOffset);
+        const executingPool = getExecutingPoolAccAddress(config.arciumClusterOffset);
+        const computationAccount = getComputationAccAddress(config.arciumClusterOffset, computationOffset);
+        
+        const compDefOffsetBytes = getCompDefAccOffset("borrow");
+        const compDefOffset = Buffer.from(compDefOffsetBytes).readUInt32LE();
+        const compDefAccount = getCompDefAccAddress(programId, compDefOffset);
+        const clusterAccount = getClusterAccAddress(config.arciumClusterOffset);
 
-    // V3 Borrow is Internal Only - No Vault Funding needed here (moved to Spend)
+        const poolAccount = getFeePoolAccAddress();
+        const clockAccount = getClockAccAddress();
+        const arciumProgramId = getArciumProgramId();
 
+        // Execute Transaction
+        logDivider();
+        logInfo("Submitting Borrow Transaction...");
+        perf.start("Transaction Submission");
 
-    // Capture pre-transaction balances
-    const preBorrowVaultBalance = (await getAccount(provider.connection, borrowVault)).amount;
-    const preCollateralVaultBalance = (await getAccount(provider.connection, collateralVault)).amount;
-    const preUserTokenBalance = initialBalance; // Captured earlier
+        // Explicit Casts for Anchor
+        const compOffsetBN = new BN(computationOffset);
+        const amountBuf = Buffer.from(borrowAmountHash);
+        const pubkeyBuf = Buffer.from(userPubkey);
+        const nonceBN = new BN(userNonce);
 
-    logDivider();
-    logInfo("Executing borrow transaction...");
-    logEntry("Pre-Borrow Vault Balance", preBorrowVaultBalance.toString(), icons.info);
-    logEntry("Pre-Collateral Vault Balance", preCollateralVaultBalance.toString(), icons.info);
+        if (amountBuf.length !== 32) throw new Error(`Invalid amount length: ${amountBuf.length}`);
+        if (pubkeyBuf.length !== 32) throw new Error(`Invalid pubkey length: ${pubkeyBuf.length}`);
 
-    // Fetch initial state nonce
-    const initialObligationState = await (program.account as any).userObligation.fetch(userObligation);
-    const initialNonce = initialObligationState.stateNonce.toNumber();
-    logEntry("Initial State Nonce", initialNonce.toString(), icons.info);
-
-    try {
-        const tx = await program.methods
+        const txSig = await program.methods
             .borrow(
-                computationOffset,
-                borrowAmountHash,
-                userPubkey, 
-                userNonce
+                compOffsetBN,
+                amountBuf as any,
+                pubkeyBuf as any,
+                nonceBN
             )
             .accountsPartial({
                 payer: wallet.publicKey,
@@ -397,90 +218,90 @@ async function testBorrow() {
                 arciumProgram: arciumProgramId,
             })
             .rpc();
-        
-        logSuccess("Transaction submitted!");
-        logEntry("Signature", tx, icons.rocket);
-        logEntry("Explorer", `https://explorer.solana.com/tx/${tx}?cluster=devnet`, icons.link);
 
-        // Polling loop
-        logDivider();
-        logInfo("Polling for state update...");
+        perf.end("Transaction Submission");
+        logSuccess(`Transaction Confirmed: ${txSig}`);
+        logEntry("Explorer", `https://explorer.solana.com/tx/${txSig}?cluster=devnet`, icons.link);
+
+        logSection("MPC Execution");
+        logInfo("Waiting for Arcium Node pickup...");
         
-        const maxRetries = 90; 
-        let success = false;
+        perf.start("MPC Finalization");
+        let finalized = false;
+        const maxMpcRetries = 60; // 2 minutes
+        const mpcPollInterval = 2000;
         
-        // Capture initial state for comparison
-        const initialEncryptedBorrow = initialObligationState.encryptedBorrow;
-        const initialEncStr = Buffer.from(initialEncryptedBorrow).toString('hex');
+        process.stdout.write("   Polling Computation Account: ");
+        for (let i = 0; i < maxMpcRetries; i++) {
+             const acc = await provider.connection.getAccountInfo(computationAccount);
+             if (acc) {
+                 finalized = true;
+                 process.stdout.write(" FOUND\n");
+                 break;
+             }
+             process.stdout.write(".");
+             await new Promise(r => setTimeout(r, mpcPollInterval));
+        }
+        perf.end("MPC Finalization");
         
-        for(let i=0; i<maxRetries; i++) {
+        if(finalized) {
+             logSuccess(`Computation Finalized (Account created at ${computationAccount.toBase58()})`);
+        } else {
+             throw new Error("Timeout waiting for Arcium Node pickup (Computation Account creation).");
+        }
+
+        logInfo("Waiting for State Update (Callback)...");
+        perf.start("Callback Latency");
+        
+        const initialNonce = userNonce.toNumber();
+        let callbackSuccess = false;
+        
+        // Polling logic
+        const maxRetries = 45;
+        process.stdout.write("   Polling State: ");
+        for (let i = 0; i < maxRetries; i++) {
             try {
                 const currentAccount = await (program.account as any).userObligation.fetch(userObligation);
-                const currentNonce = currentAccount.stateNonce.toNumber();
-                
-                // Compare updated encrypted borrow
-                const currentEncryptedBorrow = currentAccount.encryptedBorrow;
-                const currentEncStr = Buffer.from(currentEncryptedBorrow).toString('hex');
-
-                if (currentNonce > initialNonce) {
-                    console.log("");
-                    logSuccess("State updated!");
-                    logEntry("Old Encrypted Borrow", initialEncStr.substring(0, 16) + "...", icons.cross);
-                    logEntry("New Encrypted Borrow", currentEncStr.substring(0, 16) + "...", icons.checkmark);
-                    success = true;
+                if (currentAccount.stateNonce.toNumber() > initialNonce) {
+                    process.stdout.write(" DONE\n");
+                    logSuccess(`State Updated! Nonce: ${currentAccount.stateNonce}`);
+                    callbackSuccess = true;
+                    
+                    // Verify encrypted state
+                    const encState = Buffer.from(currentAccount.encryptedState);
+                    // Internal balance is the last 32 bytes of the 96-byte state
+                    const encInternal = encState.slice(64, 96);
+                    const isNonZero = !encInternal.every(b => b === 0);
+                    
+                    if (isNonZero) {
+                        logEntry("Encrypted Internal Balance", "Updated (Non-Zero)", icons.key);
+                    } else {
+                        logWarning("Encrypted Internal Balance is ALL ZEROS.");
+                    }
                     break;
                 }
-            } catch(e) {}
+            } catch (e) { 
+                // Only swallow errors if we haven't found the state yet
+            }
             process.stdout.write(".");
-            await new Promise(r => setTimeout(r, 2000));
+            await new Promise(r => setTimeout(r, 1000));
+        }
+        perf.end("Callback Latency");
+
+        if (!callbackSuccess) {
+            throw new Error("Callback timeout. State nonce did not increment.");
         }
 
-        if (!success) {
-            logError("Timeout waiting for state update.");
-            try {
-                const signatures = await provider.connection.getSignaturesForAddress(userObligation, { limit: 5 });
-                signatures.forEach(sig => console.log(`Sig: ${sig.signature} ${sig.err ? "ERR" : "OK"}`));
-            } catch (e) {}
+        perf.end("Total Execution");
+        logDivider();
+        perf.logReport();
+        logSuccess("Borrow Test Completed Successfully");
 
-            // Check Encrypted State
-            const account = await (program.account as any).userObligation.fetch(userObligation);
-            
-            const encBorrow = account.encryptedBorrow;
-            const encInternal = account.encryptedInternalBalance;
-            
-            console.log("Encrypted Borrow (Hex):", Buffer.from(encBorrow).toString('hex'));
-            console.log("Encrypted Internal (Hex):", Buffer.from(encInternal).toString('hex'));
-
-            const isZero = Buffer.from(encBorrow).every(b => b === 0);
-            const isInternalZero = Buffer.from(encInternal).every(b => b === 0);
-
-            if (isZero) {
-                logWarning("Encrypted Borrow is ALL ZEROS.");
-            } else {
-                logSuccess("Encrypted Borrow updated.");
-            }
-
-            if (isInternalZero) {
-                 logWarning("Encrypted Internal Balance is ALL ZEROS.");
-            } else {
-                 logSuccess("Encrypted Internal Balance updated.");
-            }
-        }
-
-    } catch (error: any) {
-        logError("Borrow transaction failed", error);
-        if (error.logs) {
-            logSection("Logs");
-            error.logs.forEach((l: string) => console.log(chalk.gray(l)));
-        }
-        throw error;
+    } catch (error) {
+        logError("Test Failed", error);
+        process.exit(1);
     }
-
-  } catch (error) {
-    logError("Borrow test failed", error);
-    process.exit(1);
-  }
 }
 
-// Run the test
-testBorrow();
+// Execute
+runBorrowTest();

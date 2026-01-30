@@ -90,7 +90,6 @@ pub mod shadowlend_program {
             &ctx.accounts.computation_account,
         ) {
             Ok(o) => {
-                // Changed to 'o' to keep the full struct
                 msg!("Output verified successfully.");
                 o
             }
@@ -194,7 +193,6 @@ pub mod shadowlend_program {
             );
 
             let c = &state.ciphertexts;
-
             if c.len() >= 3 {
                 user_obligation.encrypted_state[0..32].copy_from_slice(&c[0]);
                 user_obligation.encrypted_state[32..64].copy_from_slice(&c[1]);
@@ -207,9 +205,6 @@ pub mod shadowlend_program {
                 "Borrow approved. State updated. New nonce: {}",
                 user_obligation.state_nonce
             );
-
-            // Note: total_borrows cannot be updated here as amount is confidential.
-            // It will only be updated upon public Spend, or never (if privacy is absolute).
         } else {
             msg!("Borrow rejected by health check (approved=0)");
         }
@@ -466,8 +461,6 @@ pub mod shadowlend_program {
 
             // Update Global Stats
             let pool = &mut ctx.accounts.pool;
-            // Debt decreased by repaid_amount
-            pool.total_borrows = pool.total_borrows.checked_sub(repaid_amount).unwrap_or(0);
             // Collateral decreased by seized_collateral (removed from vault)
             pool.total_deposits = pool
                 .total_deposits
@@ -614,12 +607,7 @@ pub mod shadowlend_program {
                 amount,
             )?;
 
-            // Update total_borrows to reflect funds leaving the pool
-            let pool = &mut ctx.accounts.pool;
-            pool.total_borrows = pool
-                .total_borrows
-                .checked_add(amount)
-                .unwrap_or(pool.total_borrows);
+            // Total borrows tracking is removed as it cannot be accurate with confidential borrows
         } else {
             msg!("Spend rejected: Insufficient internal balance.");
         }

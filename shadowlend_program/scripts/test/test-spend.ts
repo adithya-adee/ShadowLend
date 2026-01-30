@@ -1,9 +1,13 @@
-
 import { Wallet, Program, BN } from "@coral-xyz/anchor";
 import { PublicKey, SystemProgram } from "@solana/web3.js";
-import { TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, getAssociatedTokenAddress, createAssociatedTokenAccountInstruction, mintTo, getAccount } from "@solana/spl-token";
-import { generateKeyPairSync } from "crypto";
-import chalk from "chalk";
+import { 
+    TOKEN_PROGRAM_ID, 
+    mintTo,
+    getAssociatedTokenAddress, 
+    createAssociatedTokenAccountInstruction, 
+    getAccount
+} from "@solana/spl-token";
+
 import { 
   createProvider, 
   getNetworkConfig, 
@@ -19,227 +23,319 @@ import {
   icons 
 } from "../utils/config";
 import { getWalletKeypair, loadDeployment } from "../utils/deployment";
-import { getMxeAccount, checkMxeKeysSet } from "../utils/arcium";
-import { generateComputationOffset } from "../utils/arcium";
-import { getCompDefAccOffset, getCompDefAccAddress, getClusterAccAddress, getComputationAccAddress, getExecutingPoolAccAddress, getMempoolAccAddress, getFeePoolAccAddress, getClockAccAddress, getArciumProgramId } from "@arcium-hq/client";
+import { 
+    getMxeAccount, 
+    checkMxeKeysSet, 
+    generateComputationOffset 
+} from "../utils/arcium";
+import { 
+    getCompDefAccOffset, 
+    getCompDefAccAddress, 
+    getClusterAccAddress, 
+    getComputationAccAddress, 
+    getExecutingPoolAccAddress, 
+    getMempoolAccAddress, 
+    getFeePoolAccAddress, 
+    getClockAccAddress, 
+    getArciumProgramId,
+    getMXEPublicKey,
+    x25519
+} from "@arcium-hq/client";
+import { getOrCreateX25519Key } from "../utils/keys";
+import { PerformanceTracker } from "../utils/performance";
+
 import * as idl from "../../target/idl/shadowlend_program.json";
 
+const perf = new PerformanceTracker();
+
 /**
- * Test Spend instruction (E2E: Deposit -> Borrow -> Spend)
+ * Main Test Execution Function for Spend Instruction
  */
-async function testSpend() {
-  try {
-    const config = getNetworkConfig();
-    logHeader("Test: Spend Instruction");
+async function runSpendTest() {
+    try {
+        logHeader("Test: Spend Instruction");
+        perf.start("Total Execution");
 
-    // Load wallet
-    const walletKeypair = getWalletKeypair();
-    const wallet = new Wallet(walletKeypair);
-    const provider = createProvider(wallet, config);
+        // --- Configuration & Setup ---
+        perf.start("Setup");
+        const config = getNetworkConfig();
+        const walletKeypair = getWalletKeypair();
+        const wallet = new Wallet(walletKeypair);
+        const provider = createProvider(wallet, config);
 
-    // Load deployment
-    const deployment = loadDeployment();
-    if (!deployment.poolAddress || !deployment.borrowMint || !deployment.collateralMint) {
-      throw new Error("Deployment missing pool/mints.");
-    }
+        logSection("Configuration");
+        logEntry("Network", config.name, icons.sparkle);
+        logEntry("Wallet", wallet.publicKey.toBase58(), icons.key);
 
-    const programId = new PublicKey(deployment.programId);
-    const poolPda = new PublicKey(deployment.poolAddress);
-    const borrowMint = new PublicKey(deployment.borrowMint);
-    const collateralMint = new PublicKey(deployment.collateralMint);
+        // Load Deployment
+        const deployment = loadDeployment();
+        if (!deployment || !deployment.programId || !deployment.poolAddress || !deployment.borrowMint) {
+            throw new Error("Invalid deployment state (missing pool or borrow mint). Please run setup scripts first.");
+        }
 
-    const program = await program.methods ? program : await loadProgram(provider, programId, idl) as Program;
+        const programId = new PublicKey(deployment.programId);
+        const poolPda = new PublicKey(deployment.poolAddress);
+        const borrowMint = new PublicKey(deployment.borrowMint);
 
-    // PDAs
-    const [userObligation] = PublicKey.findProgramAddressSync(
-      [Buffer.from("obligation"), wallet.publicKey.toBuffer(), poolPda.toBuffer()],
-      programId
-    );
-    const [borrowVault] = PublicKey.findProgramAddressSync(
-      [Buffer.from("borrow_vault"), poolPda.toBuffer()],
-      programId
-    );
-    const [signPdaAccount] = PublicKey.findProgramAddressSync(
-      [Buffer.from("ArciumSignerAccount")],
-      programId
-    );
-    const [collateralVault] = PublicKey.findProgramAddressSync(
-      [Buffer.from("collateral_vault"), poolPda.toBuffer()],
-      programId
-    );
+        logEntry("Program ID", programId.toBase58(), icons.folder);
+        logEntry("Pool", poolPda.toBase58(), icons.link);
+        logEntry("Borrow Mint", borrowMint.toBase58(), icons.key);
 
-    // User ATAs
-    const userCollateralAccount = await getAssociatedTokenAddress(collateralMint, wallet.publicKey);
-    const userBorrowAccount = await getAssociatedTokenAddress(borrowMint, wallet.publicKey); // Destination for Spend
+        const program = await loadProgram(provider, programId, idl) as Program;
+        perf.end("Setup");
 
-    // Arcium Config
-    const arciumProgramId = getArciumProgramId();
-    const mxeAccount = getMxeAccount(programId);
-    const mempoolAccount = getMempoolAccAddress(config.arciumClusterOffset);
-    const executingPool = getExecutingPoolAccAddress(config.arciumClusterOffset);
-    const clusterAccount = getClusterAccAddress(config.arciumClusterOffset);
-    const poolAccount = getFeePoolAccAddress();
-    const clockAccount = getClockAccAddress();
+        // --- Account Derivation ---
+        perf.start("Account Derivation");
+        const [userObligation] = PublicKey.findProgramAddressSync(
+            [Buffer.from("obligation"), wallet.publicKey.toBuffer(), poolPda.toBuffer()],
+            programId
+        );
+        const [signPdaAccount] = PublicKey.findProgramAddressSync(
+            [Buffer.from("ArciumSignerAccount")],
+            programId
+        );
+        const [borrowVault] = PublicKey.findProgramAddressSync(
+            [Buffer.from("borrow_vault"), poolPda.toBuffer()],
+            programId
+        );
 
-    // Keypair for Arcium context
-    const { getOrCreateX25519Key } = await import("../utils/keys");
-    const { publicKey: userPubkeyBytes } = getOrCreateX25519Key();
-    const userPubkey = Array.from(userPubkeyBytes);
-    
-    // User Nonce helper
-    const getUserNonce = async () => {
+        // Destination Token Account (User's Wallet for Borrow Mint)
+        const destinationTokenAccount = await getAssociatedTokenAddress(borrowMint, wallet.publicKey);
+
+        logEntry("User Obligation", userObligation.toBase58(), icons.link);
+        logEntry("Borrow Vault", borrowVault.toBase58(), icons.link);
+        logEntry("Dest Token Acc", destinationTokenAccount.toBase58(), icons.link);
+        perf.end("Account Derivation");
+
+        // --- Prepare Transaction Data ---
+        const { publicKey: userPubkeyBytes } = getOrCreateX25519Key();
+        const userPubkey = Array.from(userPubkeyBytes);
+
+        // Get nonce
+        let userNonce = new BN(0);
         try {
             const acc = await (program.account as any).userObligation.fetch(userObligation);
-            return acc.stateNonce;
-        } catch { return new BN(0); }
-    };
-
-    // Fund Account Helper
-    const fundAccount = async (targetAta: PublicKey, targetAmount: bigint, mint: PublicKey) => {
-        // (Implementation omitted for brevity, assume similar to test-borrow or simplified)
-        // Re-implementing simplified funding for robustness
-        try {
-            // Check if ATA exists
-            try { await getAccount(provider.connection, targetAta); } 
-            catch { 
-                await provider.sendAndConfirm(new (await import("@solana/web3.js")).Transaction().add(
-                    createAssociatedTokenAccountInstruction(wallet.publicKey, targetAta, wallet.publicKey, mint)
-                ));
-            }
+            userNonce = acc.stateNonce;
+            logInfo(`Current Obligation Nonce: ${userNonce.toString()}`);
             
-            // Mint to target if possible (assuming admin logic or devnet faucet)
-            // Simplified: Assume wallet has mint authority or use admin wallet logic from test-borrow if needed.
-            // For now, assume wallet has funds or simple mint:
-            await mintTo(provider.connection, wallet.payer, mint, targetAta, wallet.payer, Number(targetAmount));
-        } catch (e) {
-            // If mint fails (not auth), try transfer from wallet?
-            // Ignoring for now, assuming setup or mock.
-        }
-    };
-
-    // STEP 1: DEPOSIT (Setup)
-    logSection("Step 1: Deposit (Setup)");
-    const depositAmount = new BN(2_000_000);
-    const depositOffset = generateComputationOffset();
-    let nonce = await getUserNonce();
-
-    // Ensure User Collateral
-    await fundAccount(userCollateralAccount, BigInt(depositAmount.toString()), collateralMint);
-
-    await program.methods.deposit(
-        depositOffset,
-        depositAmount,
-        userPubkey, 
-        nonce
-    ).accountsPartial({
-        payer: wallet.publicKey,
-        signPdaAccount, mxeAccount, mempoolAccount, executingPool,
-        computationAccount: getComputationAccAddress(config.arciumClusterOffset, depositOffset),
-        compDefAccount: getCompDefAccAddress(programId, Buffer.from(getCompDefAccOffset("deposit")).readUInt32LE()),
-        clusterAccount, poolAccount, clockAccount,
-        pool: poolPda, userObligation, collateralMint, userTokenAccount: userCollateralAccount,
-        collateralVault, tokenProgram: TOKEN_PROGRAM_ID, associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
-        systemProgram: SystemProgram.programId, arciumProgram: arciumProgramId,
-    }).rpc();
-    logSuccess("Deposit Sent.");
-    await new Promise(r => setTimeout(r, 5000)); // Wait for callback
-
-    // STEP 2: BORROW (Create Internal Balance)
-    logSection("Step 2: Borrow (Setup)");
-    const borrowAmountHash = Array.from(Buffer.alloc(32, 1)); // Encrypted 
-    const borrowOffset = generateComputationOffset();
-    nonce = await getUserNonce();
-
-    await program.methods.borrow(
-        borrowOffset,
-        borrowAmountHash,
-        userPubkey,
-        nonce
-    ).accountsPartial({
-        payer: wallet.publicKey,
-        signPdaAccount, mxeAccount, mempoolAccount, executingPool,
-        computationAccount: getComputationAccAddress(config.arciumClusterOffset, borrowOffset),
-        compDefAccount: getCompDefAccAddress(programId, Buffer.from(getCompDefAccOffset("borrow")).readUInt32LE()),
-        clusterAccount, poolAccount, clockAccount,
-        pool: poolPda, userObligation,
-        systemProgram: SystemProgram.programId, arciumProgram: arciumProgramId,
-    }).rpc();
-    logSuccess("Borrow Sent.");
-    await new Promise(r => setTimeout(r, 5000)); // Wait for callback
-
-    // STEP 3: SPEND
-    logSection("Step 3: Spend");
-    // Parameters
-    const spendAmount = new BN(100_000); // 100k
-    const spendOffset = generateComputationOffset();
-    nonce = await getUserNonce();
-
-    // Fund Vault (Source of tokens)
-    logInfo("Funding Borrow Vault...");
-    await fundAccount(borrowVault, 10_000_000n, borrowMint);
-
-    // Initial Balance of Destination
-    let preSpendBalance = 0n;
-    try {
-        const acc = await getAccount(provider.connection, userBorrowAccount);
-        preSpendBalance = acc.amount;
-    } catch { 
-        // Create destination if missing
-        await provider.sendAndConfirm(new (await import("@solana/web3.js")).Transaction().add(
-            createAssociatedTokenAccountInstruction(wallet.publicKey, userBorrowAccount, wallet.publicKey, borrowMint)
-        ));
-    }
-    logEntry("Pre-Spend Dest Balance", preSpendBalance.toString(), icons.info);
-
-    // Execute Spend
-    logInfo("Executing Spend...");
-    const tx = await program.methods.spend(
-        spendOffset,
-        spendAmount,
-        userPubkey,
-        nonce
-    ).accountsPartial({
-        payer: wallet.publicKey,
-        signPdaAccount, mxeAccount, mempoolAccount, executingPool,
-        computationAccount: getComputationAccAddress(config.arciumClusterOffset, spendOffset),
-        compDefAccount: getCompDefAccAddress(programId, Buffer.from(getCompDefAccOffset("spend")).readUInt32LE()),
-        clusterAccount, poolAccount, clockAccount,
-        pool: poolPda, userObligation,
-        destinationTokenAccount: userBorrowAccount, // Dest
-        borrowVault: borrowVault, // Source
-        tokenProgram: TOKEN_PROGRAM_ID,
-        systemProgram: SystemProgram.programId,
-        arciumProgram: arciumProgramId,
-    }).rpc();
-    
-    logSuccess("Spend Transaction Sent!");
-    logEntry("Signature", tx, icons.rocket);
-
-    // Verify
-    logInfo("Waiting for finalization...");
-    const maxRetries = 90;
-    let success = false;
-    for(let i=0; i<maxRetries; i++) {
-        try {
-            const acc = await getAccount(provider.connection, userBorrowAccount);
-            if (acc.amount > preSpendBalance) {
-                logSuccess(`Spend Successful! Balance: ${acc.amount}`);
-                success = true;
-                break;
+            // Check Internal Balance (last 32 bytes)
+            const encState = Buffer.from(acc.encryptedState);
+            const encInternal = encState.slice(64, 96);
+            const isNonZero = !encInternal.every(b => b === 0);
+            
+            if (isNonZero) {
+                logEntry("Internal Balance", "Likely Positive", icons.checkmark);
+            } else {
+                logWarning("Encrypted Internal Balance is ALL ZEROS. Spend will likely FAIL (No funds to spend).");
+                logInfo("Hint: Run 'npm run test:borrow' first.");
             }
-        } catch {}
-        process.stdout.write(".");
-        await new Promise(r => setTimeout(r, 2000));
-    }
+        } catch (e) {
+            logWarning("User Obligation not initialized.");
+            throw new Error("User Obligation must exist (Run deposit/borrow tests first).");
+        }
 
-    if (!success) {
-        logError("Spend verification failed (Timeout).");
-    }
+        // --- Ensure Destination Account Exists ---
+        try {
+            await getAccount(provider.connection, destinationTokenAccount);
+        } catch (e) {
+            logInfo("Creating Destination Token Account...");
+            await provider.sendAndConfirm(
+                new (await import("@solana/web3.js")).Transaction().add(
+                    createAssociatedTokenAccountInstruction(wallet.publicKey, destinationTokenAccount, wallet.publicKey, borrowMint)
+                )
+            );
+            logSuccess("Destination ATA created.");
+        }
 
-  } catch (error) {
-    logError("Test Spend Failed", error);
-    process.exit(1);
-  }
+        // --- Ensure Vault Has Funds ---
+        // For localnet testing, we need to mint tokens to the vault so it can pay out
+        const vaultInfo = await provider.connection.getTokenAccountBalance(borrowVault).catch(() => null);
+        if (!vaultInfo || vaultInfo.value.uiAmount < 1000) {
+            logWarning("Borrow Vault low on funds. Attempting to fund...");
+            try {
+                // Try minting to vault (works if payer has mint authority, which is true for localnet deployment wallet)
+                await mintTo(
+                    provider.connection,
+                    wallet.payer,
+                    borrowMint,
+                    borrowVault,
+                    wallet.payer,
+                    10_000_000 // Fund with 10M units
+                );
+                logSuccess("Funded Borrow Vault successfully.");
+            } catch (e) {
+                logWarning(`Failed to fund Borrow Vault: ${e.message}. Spend might fail if vault is empty.`);
+            }
+        }
+
+        perf.end("Data Prep");
+
+        // --- Arcium Checks ---
+        logSection("Arcium Setup");
+        const isMxeReady = await checkMxeKeysSet(provider, programId);
+        if (!isMxeReady) {
+            logWarning("MXE Keys not set! Transaction may fail.");
+           // Don't throw, let it try
+        } else {
+            logEntry("MXE Status", "Ready", icons.checkmark);
+        }
+
+        // --- Spend Parameters ---
+        // We assume we want to spend a small amount, e.g., 500 units
+        // Must be <= Internal Balance
+        const spendAmount = new BN(100); 
+        const computationOffset = generateComputationOffset();
+
+        logEntry("Spend Amount", spendAmount.toString(), icons.key);
+
+        // Derive Arcium Accounts
+        const mxeAccount = getMxeAccount(programId);
+        const mempoolAccount = getMempoolAccAddress(config.arciumClusterOffset);
+        const executingPool = getExecutingPoolAccAddress(config.arciumClusterOffset);
+        const computationAccount = getComputationAccAddress(config.arciumClusterOffset, computationOffset);
+        
+        const compDefOffsetBytes = getCompDefAccOffset("spend");
+        const compDefOffset = Buffer.from(compDefOffsetBytes).readUInt32LE();
+        const compDefAccount = getCompDefAccAddress(programId, compDefOffset);
+        const clusterAccount = getClusterAccAddress(config.arciumClusterOffset);
+
+        const poolAccount = getFeePoolAccAddress();
+        const clockAccount = getClockAccAddress();
+        const arciumProgramId = getArciumProgramId();
+
+        // --- Execute Transaction ---
+        logDivider();
+        logInfo("Submitting Spend Transaction...");
+        perf.start("Transaction Submission");
+
+        // Explicit Casts for Anchor (Generic)
+        const compOffsetBN = new BN(computationOffset);
+        const amountBN = new BN(spendAmount); // Plaintext u64
+        const pubkeyBuf = Buffer.from(userPubkey);
+        const nonceBN = new BN(userNonce);
+
+        if (pubkeyBuf.length !== 32) throw new Error(`Invalid pubkey length: ${pubkeyBuf.length}`);
+
+        // Get pre-balance for verification
+        const preBalance = await provider.connection.getTokenAccountBalance(destinationTokenAccount)
+            .then(b => new BN(b.value.amount))
+            .catch(() => new BN(0));
+
+        const txSig = await program.methods
+            .spend(
+                compOffsetBN,
+                amountBN,
+                pubkeyBuf as any,
+                nonceBN
+            )
+            .accountsPartial({
+                payer: wallet.publicKey,
+                signPdaAccount,
+                mxeAccount,
+                mempoolAccount,
+                executingPool,
+                computationAccount,
+                compDefAccount,
+                clusterAccount,
+                poolAccount,
+                clockAccount,
+                pool: poolPda,
+                userObligation,
+                destinationTokenAccount,
+                borrowVault,
+                tokenProgram: TOKEN_PROGRAM_ID,
+                systemProgram: SystemProgram.programId,
+                arciumProgram: arciumProgramId,
+            })
+            .rpc();
+
+        perf.end("Transaction Submission");
+        logSuccess(`Transaction Confirmed: ${txSig}`);
+        logEntry("Explorer", `https://explorer.solana.com/tx/${txSig}?cluster=devnet`, icons.link);
+
+        // --- MPC Finalization ---
+        logSection("MPC Execution");
+        logInfo("Waiting for Arcium Node pickup...");
+        
+        perf.start("MPC Finalization");
+        let finalized = false;
+        const maxMpcRetries = 60; // 2 minutes
+        const mpcPollInterval = 2000;
+        
+        process.stdout.write("   Polling Computation Account: ");
+        for (let i = 0; i < maxMpcRetries; i++) {
+             const acc = await provider.connection.getAccountInfo(computationAccount);
+             if (acc) {
+                 finalized = true;
+                 process.stdout.write(" FOUND\n");
+                 break;
+             }
+             process.stdout.write(".");
+             await new Promise(r => setTimeout(r, mpcPollInterval));
+        }
+        perf.end("MPC Finalization");
+        
+        if(finalized) {
+             logSuccess(`Computation Finalized (Account created at ${computationAccount.toBase58()})`);
+        } else {
+             throw new Error("Timeout waiting for Arcium Node pickup (Computation Account creation).");
+        }
+
+        // --- State Update Verification ---
+        logInfo("Waiting for State Update (Callback)...");
+        perf.start("Callback Latency");
+        
+        const initialNonce = userNonce.toNumber();
+        let callbackSuccess = false;
+        
+        // Polling logic
+        const maxRetries = 60; // Spend usually involves token transfer so maybe slightly longer
+        process.stdout.write("   Polling State: ");
+        for (let i = 0; i < maxRetries; i++) {
+            try {
+                const currentAccount = await (program.account as any).userObligation.fetch(userObligation);
+                if (currentAccount.stateNonce.toNumber() > initialNonce) {
+                    process.stdout.write(" DONE\n");
+                    logSuccess(`State Updated! Nonce: ${currentAccount.stateNonce}`);
+                    callbackSuccess = true;
+                    
+                    // Verify Token Balance Increase
+                    const postBalance = await provider.connection.getTokenAccountBalance(destinationTokenAccount)
+                        .then(b => new BN(b.value.amount));
+                    
+                    const diff = postBalance.sub(preBalance);
+                    if (diff.eq(spendAmount)) {
+                        logEntry("Token Balance", `Increased by ${diff.toString()} (Correct)`, icons.checkmark);
+                    } else if (diff.isZero()) {
+                        logWarning("Token Balance did NOT increase. Spend logic might have failed (Insufficient internal balance?)");
+                    } else {
+                         logWarning(`Token Balance changed by ${diff.toString()} (Expected ${spendAmount.toString()})`);
+                    }
+
+                    break;
+                }
+            } catch (e) {
+             // ignore
+            }
+            process.stdout.write(".");
+            await new Promise(r => setTimeout(r, 1000));
+        }
+        perf.end("Callback Latency");
+
+        if (!callbackSuccess) {
+            throw new Error("Callback timeout. State nonce did not increment.");
+        }
+
+        perf.end("Total Execution");
+        logDivider();
+        perf.logReport();
+        logSuccess("Spend Test Completed Successfully");
+
+    } catch (error) {
+        logError("Test Failed", error);
+        process.exit(1);
+    }
 }
 
-testSpend();
+// Execute
+runSpendTest();

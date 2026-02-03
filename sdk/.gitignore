@@ -1,0 +1,21 @@
+# Dependencies
+node_modules/
+
+# Build Artifacts
+dist/
+lib/
+out/
+*.tsbuildinfo
+
+# Generated Documentation
+docs/
+
+# Environment Variables
+.env
+.env.*
+
+# OS & IDE Files
+.DS_Store
+.vscode/
+.idea/
+*.swp

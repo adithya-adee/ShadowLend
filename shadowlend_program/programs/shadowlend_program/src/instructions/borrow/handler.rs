@@ -56,7 +56,6 @@ pub fn borrow_handler(
         ctx.accounts,
         computation_offset,
         args,
-        None,
         vec![BorrowCallback::callback_ix(
             computation_offset,
             &ctx.accounts.mxe_account,

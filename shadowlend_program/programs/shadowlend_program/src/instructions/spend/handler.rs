@@ -42,7 +42,6 @@ pub fn spend_handler(
         ctx.accounts,
         computation_offset,
         args.build(),
-        None,
         vec![SpendCallback::callback_ix(
             computation_offset,
             &ctx.accounts.mxe_account,

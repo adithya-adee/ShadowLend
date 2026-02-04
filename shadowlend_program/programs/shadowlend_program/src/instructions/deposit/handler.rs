@@ -79,7 +79,6 @@ pub fn deposit_handler(
         ctx.accounts,
         computation_offset,
         args,
-        None,
         vec![DepositCallback::callback_ix(
             computation_offset,
             &ctx.accounts.mxe_account,

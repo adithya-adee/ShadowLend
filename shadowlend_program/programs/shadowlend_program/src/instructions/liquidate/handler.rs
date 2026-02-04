@@ -69,7 +69,6 @@ pub fn liquidate_handler(
         ctx.accounts,
         computation_offset,
         args.build(),
-        None,
         vec![LiquidateCallback::callback_ix(
             computation_offset,
             &ctx.accounts.mxe_account,

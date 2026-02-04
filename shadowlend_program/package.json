@@ -20,7 +20,7 @@
     "localnet:test": "NETWORK=localnet npm run test:all"
   },
   "dependencies": {
-    "@arcium-hq/client": "^0.6.3",
+    "@arcium-hq/client": "^0.7.0",
     "@coral-xyz/anchor": "^0.32.1",
     "@solana/spl-token": "^0.4.14",
     "dotenv": "^17.2.3"

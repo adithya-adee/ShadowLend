@@ -53,7 +53,6 @@ pub fn withdraw_handler(
         ctx.accounts,
         computation_offset,
         args.build(),
-        None,
         vec![WithdrawCallback::callback_ix(
             computation_offset,
             &ctx.accounts.mxe_account,

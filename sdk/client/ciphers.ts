@@ -75,6 +75,10 @@ export class ArciumKeyManager implements ConfidentialKeyManager {
     return BigInt(this.nonce.toString());
   }
 
+  /**
+   * Increments the internal nonce by 1.
+   * This should be called after a successful transaction to keep sync with on-chain state if manual management is not used.
+   */
   incrementNonce(): void {
     // Increment nonce by 1
     this.nonce = this.nonce.add(new BN(1));
@@ -126,6 +130,11 @@ export class ArciumGenericCipher<T> implements ConfidentialClient<T> {
     }
   }
 
+  /**
+   * Encrypts the data using Arcium Rescue Cipher.
+   * @param data The data to encrypt.
+   * @param nonce Optional nonce. If not provided, uses the internal nonce and increments it.
+   */
   async encrypt(
     data: T,
     nonce?: bigint | number | BN,
@@ -169,6 +178,11 @@ export class ArciumGenericCipher<T> implements ConfidentialClient<T> {
     return ciphertextBytes as RescueCiphertext;
   }
 
+  /**
+   * Decrypts the ciphertext using Arcium Rescue Cipher.
+   * @param ciphertext The encrypted data.
+   * @param nonce Optional nonce. If not provided, defaults to current internal nonce (risky if out of sync).
+   */
   async decrypt(
     ciphertext: RescueCiphertext,
     nonce?: bigint | number | BN,

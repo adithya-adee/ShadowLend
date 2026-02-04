@@ -28,6 +28,22 @@ import {
   getSignPdaAccount,
 } from "../generation";
 
+/**
+ * Builds a valid Solana instruction for repaying borrowed assets to the ShadowLend protocol.
+ *
+ * @remarks
+ * This function handles the construction of the confidential repay interaction.
+ * The `amount` parameter must be encrypted client-side using the Rescue cipher shared secret.
+ *
+ * @param params - The parameters required for the repay instruction.
+ * @param params.user - The user's wallet public key (payer).
+ * @param params.borrowMint - The mint address of the borrowed token.
+ * @param params.amount - The encrypted amount to repay (ciphertext).
+ * @param params.userNonce - The user's current replay protection nonce.
+ * @param params.userPublicKey - The user's Arcium X25519 public key.
+ *
+ * @returns A Promise that resolves to the TransactionInstruction.
+ */
 export async function buildRepayInstruction({
   user,
   borrowMint,

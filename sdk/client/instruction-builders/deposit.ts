@@ -29,6 +29,21 @@ import {
   getSignPdaAccount,
 } from "../generation";
 
+/**
+ * Builds a valid Solana instruction for depositing assets into the ShadowLend protocol.
+ *
+ * @remarks
+ * This function handles the construction of the confidential deposit interaction.
+ *
+ * @param params - The parameters required for the deposit instruction.
+ * @param params.user - The user's wallet public key (payer).
+ * @param params.collateralMint - The mint address of the collateral token.
+ * @param params.amount - The amount to deposit (u64).
+ * @param params.userNonce - The user's current replay protection nonce.
+ * @param params.userPublicKey - The user's Arcium X25519 public key.
+ *
+ * @returns A Promise that resolves to the TransactionInstruction.
+ */
 export async function buildDepositInstruction({
   user,
   collateralMint,

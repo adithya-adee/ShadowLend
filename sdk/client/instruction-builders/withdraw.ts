@@ -28,6 +28,22 @@ import {
   getSignPdaAccount,
 } from "../generation";
 
+/**
+ * Builds a valid Solana instruction for withdrawing assets from the ShadowLend protocol.
+ *
+ * @remarks
+ * This function handles the construction of the confidential withdraw interaction.
+ * The `amount` parameter must be encrypted client-side.
+ *
+ * @param params - The parameters required for the withdraw instruction.
+ * @param params.user - The user's wallet public key (payer).
+ * @param params.collateralMint - The mint address of the collateral token (e.g. SOL).
+ * @param params.amount - The encrypted amount to withdraw (ciphertext).
+ * @param params.userNonce - The user's current replay protection nonce.
+ * @param params.userPublicKey - The user's Arcium X25519 public key.
+ *
+ * @returns A Promise that resolves to the TransactionInstruction.
+ */
 export async function buildWithdrawInstruction({
   user,
   collateralMint,

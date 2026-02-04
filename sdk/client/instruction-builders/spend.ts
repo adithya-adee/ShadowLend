@@ -28,6 +28,22 @@ import {
   getSignPdaAccount,
 } from "../generation";
 
+/**
+ * Builds a valid Solana instruction for spending borrowed assets from the ShadowLend protocol.
+ *
+ * @remarks
+ * This function handles the construction of the confidential spend interaction.
+ * The `amount` parameter must be encrypted client-side.
+ *
+ * @param params - The parameters required for the spend instruction.
+ * @param params.user - The user's wallet public key (payer).
+ * @param params.borrowMint - The mint address of the borrowed token.
+ * @param params.amount - The encrypted amount to spend (ciphertext).
+ * @param params.userNonce - The user's current replay protection nonce.
+ * @param params.userPublicKey - The user's Arcium X25519 public key.
+ *
+ * @returns A Promise that resolves to the TransactionInstruction.
+ */
 export async function buildSpendInstruction({
   user,
   borrowMint,

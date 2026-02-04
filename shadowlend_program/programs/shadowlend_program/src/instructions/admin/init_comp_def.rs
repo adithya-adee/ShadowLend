@@ -69,7 +69,7 @@ pub struct InitWithdrawCompDef<'info> {
     #[account(address = LUT_PROGRAM_ID)]
     /// CHECK: lut_program is the Address Lookup Table program.
     pub lut_program: UncheckedAccount<'info>,
-    
+
     pub arcium_program: Program<'info, Arcium>,
     pub system_program: Program<'info, System>,
 }

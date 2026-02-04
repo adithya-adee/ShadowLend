@@ -3,6 +3,17 @@ use anchor_lang::prelude::*;
 use arcium_anchor::prelude::*;
 use arcium_client::idl::arcium::types::CallbackAccount;
 
+/// Processes a spend request by queuing a confidential MPC balance check.
+///
+/// Queues Arcium computation to verify internal balance and approve spend. Callback
+/// transfers tokens from borrow vault to destination if balance is sufficient.
+///
+/// # Arguments
+/// * `ctx` - Anchor context with spend accounts
+/// * `computation_offset` - Unique identifier for this Arcium computation
+/// * `amount` - Token amount to spend
+/// * `user_pubkey` - User's X25519 public key for encryption
+/// * `user_nonce` - Nonce for encryption freshness
 pub fn spend_handler(
     ctx: Context<Spend>,
     computation_offset: u64,
@@ -10,48 +21,33 @@ pub fn spend_handler(
     user_pubkey: [u8; 32],
     user_nonce: u128,
 ) -> Result<()> {
-    
-    let user_obligation = &ctx.accounts.user_obligation;
-    let pool = &ctx.accounts.pool;
+    let user_obligation_key = ctx.accounts.user_obligation.key();
+    let is_initialized = ctx.accounts.user_obligation.is_initialized;
 
-    let mut args = ArgBuilder::new();
+    let args = ArgBuilder::new()
+        .plaintext_u64(amount)
+        .x25519_pubkey(user_pubkey)
+        .plaintext_u128(user_nonce)
+        .account(user_obligation_key, 72u32, 96u32)
+        .plaintext_u8(if is_initialized { 1 } else { 0 })
+        .build();
 
-    // Map public spend amount to circuit arguments
-    args = args.plaintext_u64(amount);
-
-    // Provide encryption context for account loading
-    args = args.x25519_pubkey(user_pubkey).plaintext_u128(user_nonce);
-
-    // Encrypted internal balance retrieval from UserObligation
-    // Offset 72 starts at `encrypted_state`. Length is 96 bytes.
-    args = if user_obligation.is_initialized {
-        args.account(user_obligation.key(), 72u32, 96u32)
-    } else {
-        args.encrypted_u128([0u8; 32])
-            .encrypted_u128([0u8; 32])
-            .encrypted_u128([0u8; 32])
-    };
-
-    // Flag to indicate if internal balance state exists
-    args = args.plaintext_u8(if user_obligation.is_initialized { 1 } else { 0 });
-    
     ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
 
-    // Queue MPC computation to verify internal balance and approve spend
     queue_computation(
         ctx.accounts,
         computation_offset,
-        args.build(),
+        args,
         vec![SpendCallback::callback_ix(
             computation_offset,
             &ctx.accounts.mxe_account,
             &[
                 CallbackAccount {
-                    pubkey: user_obligation.key(),
+                    pubkey: user_obligation_key,
                     is_writable: true,
                 },
                 CallbackAccount {
-                    pubkey: pool.key(),
+                    pubkey: ctx.accounts.pool.key(),
                     is_writable: true,
                 },
                 CallbackAccount {

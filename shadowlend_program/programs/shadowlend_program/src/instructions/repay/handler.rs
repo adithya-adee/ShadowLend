@@ -8,14 +8,15 @@ use arcium_client::idl::arcium::types::CallbackAccount;
 
 /// Processes a debt repayment by transferring tokens and queuing an MPC computation.
 ///
-/// Transfers repayment tokens from the user to the borrow vault, then queues a confidential
-/// computation to update the encrypted debt balance. The MPC circuit calculates:
-/// new_debt = max(0, current_debt - repay_amount)
+/// Transfers tokens from user to borrow vault, then queues confidential computation to
+/// update encrypted debt balance.
 ///
 /// # Arguments
 /// * `ctx` - Anchor context with repay accounts
 /// * `computation_offset` - Unique identifier for this Arcium computation
 /// * `amount` - Token amount to repay (must be > 0)
+/// * `user_pubkey` - User's X25519 public key for encryption
+/// * `user_nonce` - Nonce for encryption freshness
 pub fn repay_handler(
     ctx: Context<Repay>,
     computation_offset: u64,
@@ -24,6 +25,9 @@ pub fn repay_handler(
     user_nonce: u128,
 ) -> Result<()> {
     require!(amount > 0, ErrorCode::InvalidAmount);
+
+    let user_obligation_key = ctx.accounts.user_obligation.key();
+    let is_initialized = ctx.accounts.user_obligation.is_initialized;
 
     let transfer_cpi = Transfer {
         from: ctx.accounts.user_token_account.to_account_info(),
@@ -36,35 +40,25 @@ pub fn repay_handler(
         amount,
     )?;
 
-    let user_obligation = &ctx.accounts.user_obligation;
-
-    let mut args = ArgBuilder::new()
+    let args = ArgBuilder::new()
         .plaintext_u64(amount)
         .x25519_pubkey(user_pubkey)
-        .plaintext_u128(user_nonce);
-
-    // Offset 72 starts at `encrypted_state`. Length is 96 bytes.
-    args = if user_obligation.is_initialized {
-        args.account(user_obligation.key(), 72u32, 96u32)
-            .plaintext_u8(1)
-    } else {
-        args.encrypted_u128([0u8; 32])
-            .encrypted_u128([0u8; 32])
-            .encrypted_u128([0u8; 32])
-            .plaintext_u8(0)
-    };
+        .plaintext_u128(user_nonce)
+        .account(user_obligation_key, 72u32, 96u32)
+        .plaintext_u8(if is_initialized { 1 } else { 0 })
+        .build();
 
     ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
 
     queue_computation(
         ctx.accounts,
         computation_offset,
-        args.build(),
+        args,
         vec![RepayCallback::callback_ix(
             computation_offset,
             &ctx.accounts.mxe_account,
             &[CallbackAccount {
-                pubkey: user_obligation.key(),
+                pubkey: user_obligation_key,
                 is_writable: true,
             }],
         )?],

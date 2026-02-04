@@ -33,5 +33,4 @@ pub struct BorrowCallback<'info> {
         bump = user_obligation.bump
     )]
     pub user_obligation: Box<Account<'info, UserObligation>>,
-
 }

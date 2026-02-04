@@ -7,14 +7,15 @@ use arcium_client::idl::arcium::types::CallbackAccount;
 
 /// Processes a withdrawal request by queuing a confidential MPC health check.
 ///
-/// Constructs circuit arguments with encrypted collateral and debt balances, then queues
-/// an Arcium computation to verify the health factor after withdrawal. If the check passes,
-/// the callback will update encrypted collateral and transfer tokens from the vault to user.
+/// Verifies health factor after withdrawal. If check passes, callback updates encrypted
+/// collateral and transfers tokens from vault to user.
 ///
 /// # Arguments
 /// * `ctx` - Anchor context with withdraw accounts
 /// * `computation_offset` - Unique identifier for this Arcium computation
 /// * `amount` - Token amount to withdraw (must be > 0)
+/// * `user_pubkey` - User's X25519 public key for encryption
+/// * `user_nonce` - Nonce for encryption freshness
 pub fn withdraw_handler(
     ctx: Context<Withdraw>,
     computation_offset: u64,
@@ -24,45 +25,34 @@ pub fn withdraw_handler(
 ) -> Result<()> {
     require!(amount > 0, ErrorCode::InvalidAmount);
 
-    let user_obligation = &ctx.accounts.user_obligation;
-    let pool = &ctx.accounts.pool;
-    let ltv_bps = pool.ltv_bps as u64;
+    let user_obligation_key = ctx.accounts.user_obligation.key();
+    let is_initialized = ctx.accounts.user_obligation.is_initialized;
 
-    let mut args = ArgBuilder::new()
+    let args = ArgBuilder::new()
         .plaintext_u64(amount)
         .x25519_pubkey(user_pubkey)
-        .plaintext_u128(user_nonce);
-
-    // Offset 72 starts at `encrypted_state`. Length is 96 bytes.
-    args = if user_obligation.is_initialized {
-        args.account(user_obligation.key(), 72u32, 96u32)
-    } else {
-        args.encrypted_u128([0u8; 32])
-            .encrypted_u128([0u8; 32])
-            .encrypted_u128([0u8; 32])
-    };
-
-    args = args.plaintext_u64(ltv_bps);
-
-    // Add is_initialized flag
-    args = args.plaintext_u8(if user_obligation.is_initialized { 1 } else { 0 });
+        .plaintext_u128(user_nonce)
+        .account(user_obligation_key, 72u32, 96u32)
+        .plaintext_u64(ctx.accounts.pool.ltv_bps as u64)
+        .plaintext_u8(if is_initialized { 1 } else { 0 })
+        .build();
 
     ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
 
     queue_computation(
         ctx.accounts,
         computation_offset,
-        args.build(),
+        args,
         vec![WithdrawCallback::callback_ix(
             computation_offset,
             &ctx.accounts.mxe_account,
             &[
                 CallbackAccount {
-                    pubkey: user_obligation.key(),
+                    pubkey: user_obligation_key,
                     is_writable: true,
                 },
                 CallbackAccount {
-                    pubkey: pool.key(),
+                    pubkey: ctx.accounts.pool.key(),
                     is_writable: true,
                 },
                 CallbackAccount {

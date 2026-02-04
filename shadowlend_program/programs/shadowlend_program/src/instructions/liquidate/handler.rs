@@ -8,13 +8,16 @@ use arcium_client::idl::arcium::types::CallbackAccount;
 
 /// Processes a liquidation request by escrowing repayment and queuing an MPC check.
 ///
-/// 1. Transfers repayment tokens from Liquidator to Borrow Vault (escrowed).
-/// 2. Queues MPC computation to check if User HF < 1.0.
-/// 3. If Liquidatable: Seize collateral to Liquidator.
-/// 4. If Healthy: Refund repayment to Liquidator.
+/// Transfers repayment tokens from liquidator to borrow vault (escrowed), then queues MPC
+/// computation to check if user health factor < 1.0. Callback seizes collateral if
+/// liquidatable, or refunds repayment if healthy.
 ///
 /// # Arguments
-/// * `amount` - Amount of debt to repay
+/// * `ctx` - Anchor context with liquidate accounts
+/// * `computation_offset` - Unique identifier for this Arcium computation
+/// * `amount` - Amount of debt to repay (must be > 0)
+/// * `user_pubkey` - User's X25519 public key for encryption
+/// * `user_nonce` - Nonce for encryption freshness
 pub fn liquidate_handler(
     ctx: Context<Liquidate>,
     computation_offset: u64,
@@ -24,8 +27,9 @@ pub fn liquidate_handler(
 ) -> Result<()> {
     require!(amount > 0, ErrorCode::InvalidAmount);
 
-    // 1. Transfer Repayment (Escrow)
-    // Transfer from Liquidator -> Borrow Vault
+    let user_obligation_key = ctx.accounts.user_obligation.key();
+    let is_initialized = ctx.accounts.user_obligation.is_initialized;
+
     let transfer_cpi = Transfer {
         from: ctx.accounts.liquidator_borrow_account.to_account_info(),
         to: ctx.accounts.borrow_vault.to_account_info(),
@@ -37,48 +41,31 @@ pub fn liquidate_handler(
         amount,
     )?;
 
-    // 2. Queue Computation
-    let user_obligation = &ctx.accounts.user_obligation;
-    let pool = &ctx.accounts.pool;
-
-    let mut args = ArgBuilder::new()
+    let args = ArgBuilder::new()
         .plaintext_u64(amount)
         .x25519_pubkey(user_pubkey)
-        .plaintext_u128(user_nonce);
-
-    // Inputs: Encrypted Deposit, Encrypted Borrow, Liquidation Threshold
-    // Inputs: Encrypted UserState, Liquidation Threshold, Flags
-    // Offset 72 starts at `encrypted_state`. Length is 96 bytes.
-    args = if user_obligation.is_initialized {
-        args.account(user_obligation.key(), 72u32, 96u32)
-    } else {
-        args.encrypted_u128([0u8; 32])
-            .encrypted_u128([0u8; 32])
-            .encrypted_u128([0u8; 32])
-    };
-
-    // Threshold
-    args = args.plaintext_u64(pool.liquidation_threshold as u64);
-
-    // Flags (is_initialized)
-    args = args.plaintext_u8(if user_obligation.is_initialized { 1 } else { 0 });
+        .plaintext_u128(user_nonce)
+        .account(user_obligation_key, 72u32, 96u32)
+        .plaintext_u64(ctx.accounts.pool.liquidation_threshold as u64)
+        .plaintext_u8(if is_initialized { 1 } else { 0 })
+        .build();
 
     ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
 
     queue_computation(
         ctx.accounts,
         computation_offset,
-        args.build(),
+        args,
         vec![LiquidateCallback::callback_ix(
             computation_offset,
             &ctx.accounts.mxe_account,
             &[
                 CallbackAccount {
-                    pubkey: user_obligation.key(),
+                    pubkey: user_obligation_key,
                     is_writable: true,
                 },
                 CallbackAccount {
-                    pubkey: pool.key(),
+                    pubkey: ctx.accounts.pool.key(),
                     is_writable: true,
                 },
                 CallbackAccount {

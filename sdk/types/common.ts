@@ -113,7 +113,8 @@ export const toU8 = (val: number): U8 => {
  * @throws Error if value is out of range [0, 65535].
  */
 export const toU16 = (val: number): U16 => {
-  if (val < 0 || val > 65535) throw new Error(`Value ${val} out of range for U16`);
+  if (val < 0 || val > 65535)
+    throw new Error(`Value ${val} out of range for U16`);
   return val as U16;
 };
 
@@ -122,7 +123,8 @@ export const toU16 = (val: number): U16 => {
  * @throws Error if value is out of range.
  */
 export const toU32 = (val: number): U32 => {
-  if (val < 0 || val > 4294967295) throw new Error(`Value ${val} out of range for U32`);
+  if (val < 0 || val > 4294967295)
+    throw new Error(`Value ${val} out of range for U32`);
   return val as U32;
 };
 

@@ -1,10 +1,10 @@
 {
-    "entryPoints": ["./index.ts"],
-    "out": "docs",
-    "name": "ShadowLend SDK",
-    "plugin": [],
-    "excludePrivate": true,
-    "excludeProtected": true,
-    "theme": "default",
-    "readme": "README.md"
+  "entryPoints": ["./index.ts"],
+  "out": "docs",
+  "name": "ShadowLend SDK",
+  "plugin": [],
+  "excludePrivate": true,
+  "excludeProtected": true,
+  "theme": "default",
+  "readme": "README.md"
 }

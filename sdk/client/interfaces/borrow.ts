@@ -5,7 +5,7 @@ export interface BorrowInstructionParams {
   /** The user's wallet public key (payer) */
   user: PublicKey;
 
-  /** 
+  /**
    * Encrypted amount to borrow.
    * This is a 32-byte ciphertext encrypted with the shared secret.
    */

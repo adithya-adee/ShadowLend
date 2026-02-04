@@ -20,7 +20,7 @@ export interface InitializePoolParams {
 
 /**
  * Builds an instruction to initialize a new lending pool.
- * 
+ *
  * @param params - The initialization parameters.
  * @returns A Promise that resolves to the TransactionInstruction.
  */

@@ -6,25 +6,25 @@ import {
 import { PublicKey } from "@solana/web3.js";
 import { AnchorProvider, BN } from "@coral-xyz/anchor";
 import crypto from "crypto";
-import { program } from "@/idl";
+import { program } from "../../idl";
 
 /**
  * Retrieves the Multi-Party Execution (MXE) account address for the ShadowLend program.
- * 
+ *
  * @returns The public key of the MXE account.
  */
 export function getMxeAccount(): PublicKey {
   try {
     return getMXEAccAddress(program.programId);
   } catch (error) {
-     const errorMessage = error instanceof Error ? error.message : String(error);
-     throw new Error(`Failed to get MXE account address: ${errorMessage}`);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to get MXE account address: ${errorMessage}`);
   }
 }
 
 /**
  * Checks if the MXE account is initialized on-chain for the ShadowLend program.
- * 
+ *
  * @param provider - The Anchor provider used to query the chain.
  * @returns A promise that resolves to `true` if initialized, `false` otherwise.
  */
@@ -42,7 +42,7 @@ export async function checkMxeInitialized(
 
 /**
  * Checks if the MXE Distributed Key Generation (DKG) is complete and keys are set for the ShadowLend program.
- * 
+ *
  * @param provider - The Anchor provider.
  * @param maxRetries - Maximum number of retries (default: 10).
  * @param retryDelayMs - Delay between retries in milliseconds (default: 500).
@@ -73,7 +73,7 @@ export async function checkMxeKeysSet(
 
 /**
  * Waits for the MXE keys to be set for the ShadowLend program by polling the status.
- * 
+ *
  * @param provider - The Anchor provider.
  * @param maxWaitMs - Maximum wait time in milliseconds (default: 60000).
  * @param pollIntervalMs - Polling interval in milliseconds (default: 5000).
@@ -101,13 +101,13 @@ export async function waitForMxeKeys(
 
 /**
  * Waits for an Arcium computation to finalize by polling the computation account.
- * 
+ *
  * The computation lifecycle involves:
  * 1. Transaction completion (encrypted data queued).
  * 2. Waiting in mempool.
  * 3. Off-chain MPC execution.
  * 4. Callback invocation with results.
- * 
+ *
  * @param provider - The Anchor provider.
  * @param computationOffset - The unique computation offset (ID) used when queuing.
  * @param maxWaitMs - Maximum wait time in milliseconds (default: 120000 = 2 minutes).
@@ -163,7 +163,7 @@ export async function waitForComputationFinalization(
 
 /**
  * Retrieves the Arcium program instance from the provider.
- * 
+ *
  * @param provider - The Anchor provider.
  * @returns The Arcium program instance.
  */
@@ -173,7 +173,7 @@ export function getArciumProgramInstance(provider: AnchorProvider) {
 
 /**
  * Generates a cryptographically secure random 8-byte computation offset.
- * 
+ *
  * @returns A BN (BigNumber) representing the random offset.
  */
 export function generateComputationOffset(): BN {

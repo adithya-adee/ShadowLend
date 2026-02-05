@@ -1,7 +1,7 @@
 {
   "network": "localnet",
   "programId": "CiCw5JPuC7oHRvEzhcmKYYBmYDVSUZxQG4hHMAarPUvE",
-  "timestamp": "2026-02-05T14:45:56.026Z",
+  "timestamp": "2026-02-05T10:13:36.612Z",
   "mxeAccount": "EfScJHULtGJJqRgYjp3cJZa4Tjw7QUQxc2HfydgxwQgK",
   "computationDefinitions": {
     "deposit": "BhwtxzeXS3GaWcc1RC8k1hidxcoQwNVdWpNS3pYEtGTK",
@@ -11,7 +11,7 @@
     "liquidate": "13YHHHYCSnouDLzLJ1JvDpUqZ652TmAmM6sJzM7GSxaX",
     "spend": "7NwZsYVJbKVLfPyTyooAc3JyW1Hno4FKp1CQW8jJxsbg"
   },
-  "collateralMint": "CQKdyYFx7A8mgSL7DTtSX9v5BPrJkZMR7ekYKpZ8rysP",
-  "borrowMint": "BPqpX1UReqofVuznyHeniXDAJM4N2pBGwwEqxb9VZ4eY",
+  "collateralMint": "6zZCkefuqJ9Hna6gSnuo5ApyhMTptWYxgW5AJ3kjy52g",
+  "borrowMint": "CnrTJiNGwYn484efPLH2Zd4EttRAsYTnVgYFaBFEUwah",
   "poolAddress": "8Q9R9NRonnPFA4hJ9XuyeUhVgHiMGm6qUEADA3gqgJQt"
 }

@@ -43,7 +43,7 @@ export class ShadowLendClient {
       this.keyManager,
       provider,
       serializer,
-      deserializer
+      deserializer,
     );
   }
 
@@ -62,11 +62,11 @@ export class ShadowLendClient {
       const wallet = this.provider.wallet as any;
       if (!wallet.signMessage) {
         throw new Error(
-          "Wallet does not support signMessage. Please provide a seed explicitly."
+          "Wallet does not support signMessage. Please provide a seed explicitly.",
         );
       }
       const derived = await deriveSeedFromWallet(
-        wallet.signMessage.bind(wallet)
+        wallet.signMessage.bind(wallet),
       );
       await this.keyManager.initializeFromSeed(derived);
     }

@@ -50,9 +50,10 @@ export async function buildDepositInstruction({
   amount,
   userNonce,
   userPublicKey,
+  clusterOffset,
 }: DepositInstructionParams) {
   const programId = program.programId;
-  const arciumClusterOffset = ARCIUM_LOCALNET_CLUSTER_OFFSET;
+  const arciumClusterOffset = clusterOffset ?? ARCIUM_LOCALNET_CLUSTER_OFFSET;
 
   // --- Arcium Accounts ---
   const computationOffset = generateComputationOffset();

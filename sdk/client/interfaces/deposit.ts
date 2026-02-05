@@ -22,4 +22,9 @@ export interface DepositInstructionParams {
    * Used by the MPC cluster to encrypt the output for the user.
    */
   userPublicKey: ArciumX25519PublicKey;
+
+  /**
+   * Optional Arcium Cluster Offset. Defaults to ARCIUM_LOCALNET_CLUSTER_OFFSET.
+   */
+  clusterOffset?: number;
 }

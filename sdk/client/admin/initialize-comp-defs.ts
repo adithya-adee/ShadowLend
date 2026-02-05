@@ -1,7 +1,15 @@
 import { PublicKey } from "@solana/web3.js";
+import { AddressLookupTableProgram, SystemProgram } from "@solana/web3.js";
 import { program } from "@/idl";
-import { getMxeAccount } from "@/client/generation/arcium";
-import { getCompDefAccAddress, getCompDefAccOffset } from "@arcium-hq/client";
+import {
+  getMxeAccount,
+  getArciumProgramInstance,
+} from "@/client/generation/arcium";
+import {
+  getCompDefAccAddress,
+  getCompDefAccOffset,
+  getLookupTableAddress,
+} from "@arcium-hq/client";
 
 /**
  * Supported computation definition types in the ShadowLend protocol.
@@ -41,42 +49,56 @@ export async function buildInitCompDefInstruction(
   const compDefOffset = Buffer.from(compDefOffsetBytes).readUInt32LE(0);
   const compDefAccount = getCompDefAccAddress(programId, compDefOffset);
 
+  // Address Lookup Table derivation
+  const arciumProgram = getArciumProgramInstance(program.provider as any);
+  const mxeAccountData =
+    await arciumProgram.account.mxeAccount.fetch(mxeAccount);
+  // Use programId as authority for LUT checks, as per verified constraint
+  const lutAddress = getLookupTableAddress(
+    programId,
+    mxeAccountData.lutOffsetSlot,
+  );
+
   const accounts = {
     authority,
-    mxe_account: mxeAccount,
-    comp_def_account: compDefAccount,
+    mxeAccount: mxeAccount,
+    compDefAccount: compDefAccount,
+    addressLookupTable: lutAddress,
+    lutProgram: AddressLookupTableProgram.programId,
+    arciumProgram: arciumProgram.programId,
+    systemProgram: SystemProgram.programId,
   };
 
   switch (type) {
     case "deposit":
       return await program.methods
         .init_deposit_comp_def()
-        .accounts(accounts)
+        .accounts(accounts as any)
         .instruction();
     case "borrow":
       return await program.methods
         .init_borrow_comp_def()
-        .accounts(accounts)
+        .accounts(accounts as any)
         .instruction();
     case "withdraw":
       return await program.methods
         .init_withdraw_comp_def()
-        .accounts(accounts)
+        .accounts(accounts as any)
         .instruction();
     case "repay":
       return await program.methods
         .init_repay_comp_def()
-        .accounts(accounts)
+        .accounts(accounts as any)
         .instruction();
     case "spend":
       return await program.methods
         .init_spend_comp_def()
-        .accounts(accounts)
+        .accounts(accounts as any)
         .instruction();
     case "liquidate":
       return await program.methods
         .init_liquidate_comp_def()
-        .accounts(accounts)
+        .accounts(accounts as any)
         .instruction();
     default:
       throw new Error(`Unknown comp def type: ${type}`);

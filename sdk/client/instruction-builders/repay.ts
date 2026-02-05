@@ -50,9 +50,10 @@ export async function buildRepayInstruction({
   amount,
   userNonce,
   userPublicKey,
+  clusterOffset,
 }: RepayInstructionParams) {
   const programId = program.programId;
-  const arciumClusterOffset = ARCIUM_LOCALNET_CLUSTER_OFFSET;
+  const arciumClusterOffset = clusterOffset ?? ARCIUM_LOCALNET_CLUSTER_OFFSET;
 
   // Arcium Accounts
   const computationOffset = generateComputationOffset();

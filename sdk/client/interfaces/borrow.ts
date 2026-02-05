@@ -20,4 +20,9 @@ export interface BorrowInstructionParams {
    * User's Arcium X25519 Public Key.
    */
   userPublicKey: ArciumX25519PublicKey;
+
+  /**
+   * Optional Arcium Cluster Offset. Defaults to ARCIUM_LOCALNET_CLUSTER_OFFSET.
+   */
+  clusterOffset?: number;
 }

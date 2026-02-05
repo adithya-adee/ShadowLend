@@ -1,16 +1,23 @@
 import { Connection, Keypair, PublicKey } from "@solana/web3.js";
-import { BN } from "@coral-xyz/anchor";
-import { program } from "../idl";
-import { U64, toU64 } from "../types";
+import { AnchorProvider, BN } from "@coral-xyz/anchor";
+import { U64, toU64 } from "sdk";
 import {
   ArciumKeyManager,
   ArciumGenericCipher,
   deriveSeedFromWallet,
-} from "../client/ciphers";
-import { checkMxeKeysSet, waitForMxeKeys } from "../client/generation/arcium";
+} from "sdk";
+import { waitForMxeKeys } from "sdk";
 import * as crypto from "crypto";
 import * as fs from "fs";
 import * as path from "path";
+import * as dotenv from "dotenv";
+
+// Load environment variables from .env
+dotenv.config();
+
+// Import program from SDK's IDL
+import { program } from "sdk";
+export { program };
 
 // Define paths for persistence
 const DEPLOYMENT_PATH = path.join(
@@ -19,9 +26,13 @@ const DEPLOYMENT_PATH = path.join(
 );
 
 export const RPC_URL = process.env.RPC_URL || "http://127.0.0.1:8899";
+export const ARCIUM_CLUSTER_OFFSET = parseInt(
+  process.env.ARCIUM_CLUSTER_OFFSET || "0",
+);
 export const connection = new Connection(RPC_URL, "confirmed");
 
 import * as os from "os";
+import { getMXEPublicKey } from "@arcium-hq/client";
 
 // Load or Generate Payer
 const PAYER_KEYPATH = path.join(__dirname, "payer.json");
@@ -58,6 +69,33 @@ export const mockSignMessage = async (msg: Uint8Array): Promise<Uint8Array> => {
   return hmac.digest();
 };
 
+/**
+ * Check if MXE keys are set (DKG completed)
+ */
+export async function checkMxeKeysSet(
+  provider: AnchorProvider,
+  programId: PublicKey,
+  maxRetries: number = 10,
+  retryDelayMs: number = 500,
+): Promise<boolean> {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const mxePublicKey = await getMXEPublicKey(provider, programId);
+      if (mxePublicKey) {
+        return true;
+      }
+    } catch (error) {
+      // Continue to next attempt
+    }
+
+    if (attempt < maxRetries) {
+      await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+    }
+  }
+
+  return false;
+}
+
 export async function setupEnvironment() {
   console.log("🛠️ Setting up Environment...");
 
@@ -92,17 +130,24 @@ export async function setupEnvironment() {
   const collateralMint = new PublicKey(deployment.collateralMint);
   const borrowMint = new PublicKey(deployment.borrowMint);
 
-  // 3. Arcium Check
+  // 3. Arcium Check (Quick check - don't wait)
   console.log("Checking Arcium Cluster Status...");
   try {
-    const isReady = await checkMxeKeysSet(program.provider as any);
+    // Quick check with minimal retries (1 retry, 0ms delay)
+    const isReady = await checkMxeKeysSet(
+      program.provider as AnchorProvider,
+      program.programId,
+      1,
+      0,
+    );
     if (!isReady) {
-      console.log("Waiting for MXE Keys to be set...");
-      await waitForMxeKeys(program.provider as any);
+      console.warn("⚠️ MXE Keys not set yet. Computations may fail.");
+      console.warn("   Run 'arcium mxe heartbeat' if needed.");
+    } else {
+      console.log("✅ Arcium MXE Keys Set");
     }
-    console.log("✅ Arcium MXE Keys Set");
   } catch (e) {
-    // console.warn("⚠️ Arcium check failed...", e);
+    console.warn("⚠️ Could not verify Arcium status");
   }
 
   // 4. Setup SDK Cipher

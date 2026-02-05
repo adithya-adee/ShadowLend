@@ -19,3 +19,9 @@ docs/
 .vscode/
 .idea/
 *.swp
+
+# Test Wallets
+payer.json
+
+# Logs
+*.log

@@ -1,15 +1,16 @@
 {
   "name": "sdk",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "ShadowLend SDK for confidential lending on Solana",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc && tsc-alias",
     "docs": "typedoc",
     "format": "prettier --write .",
-    "test:deposit": "ts-node ./tests/test-deposit.ts",
-    "test:borrow": "ts-node ./tests/test-borrow.ts",
-    "test:spend": "ts-node ./tests/test-spend.ts"
+    "test:deposit": "ts-node -r tsconfig-paths/register --project tests/tsconfig.json tests/test-deposit.ts",
+    "test:borrow": "ts-node -r tsconfig-paths/register --project tests/tsconfig.json tests/test-borrow.ts",
+    "test:spend": "ts-node -r tsconfig-paths/register --project tests/tsconfig.json tests/test-spend.ts"
   },
   "keywords": [],
   "author": "",
@@ -29,6 +30,7 @@
     "@arcium-hq/client": "^0.7.0",
     "@coral-xyz/anchor": "^0.32.1",
     "@solana/spl-token": "^0.4.14",
-    "@solana/web3.js": "^1.98.4"
+    "@solana/web3.js": "^1.98.4",
+    "dotenv": "^17.2.3"
   }
 }

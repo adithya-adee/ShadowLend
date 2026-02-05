@@ -1,5 +1,5 @@
 export type ShadowLend = {
-  address: "EKPFnwquVeawEBxn5iaNw9NXpyh1Axto7P3C1EHBXScy";
+  address: "CiCw5JPuC7oHRvEzhcmKYYBmYDVSUZxQG4hHMAarPUvE";
   metadata: {
     name: "shadowlend_program";
     version: "0.1.0";
@@ -639,6 +639,14 @@ export type ShadowLend = {
           writable: true;
         },
         {
+          name: "address_lookup_table";
+          writable: true;
+        },
+        {
+          name: "lut_program";
+          address: "AddressLookupTab1e1111111111111111111111111";
+        },
+        {
           name: "arcium_program";
           address: "Arcj82pX7HxYKLR92qvgZUAd7vGS1k4hQvAFcPATFdEQ";
         },
@@ -666,6 +674,14 @@ export type ShadowLend = {
         {
           name: "comp_def_account";
           writable: true;
+        },
+        {
+          name: "address_lookup_table";
+          writable: true;
+        },
+        {
+          name: "lut_program";
+          address: "AddressLookupTab1e1111111111111111111111111";
         },
         {
           name: "arcium_program";
@@ -697,6 +713,14 @@ export type ShadowLend = {
           writable: true;
         },
         {
+          name: "address_lookup_table";
+          writable: true;
+        },
+        {
+          name: "lut_program";
+          address: "AddressLookupTab1e1111111111111111111111111";
+        },
+        {
           name: "arcium_program";
           address: "Arcj82pX7HxYKLR92qvgZUAd7vGS1k4hQvAFcPATFdEQ";
         },
@@ -724,6 +748,14 @@ export type ShadowLend = {
         {
           name: "comp_def_account";
           writable: true;
+        },
+        {
+          name: "address_lookup_table";
+          writable: true;
+        },
+        {
+          name: "lut_program";
+          address: "AddressLookupTab1e1111111111111111111111111";
         },
         {
           name: "arcium_program";
@@ -755,6 +787,14 @@ export type ShadowLend = {
           writable: true;
         },
         {
+          name: "address_lookup_table";
+          writable: true;
+        },
+        {
+          name: "lut_program";
+          address: "AddressLookupTab1e1111111111111111111111111";
+        },
+        {
           name: "arcium_program";
           address: "Arcj82pX7HxYKLR92qvgZUAd7vGS1k4hQvAFcPATFdEQ";
         },
@@ -782,6 +822,14 @@ export type ShadowLend = {
         {
           name: "comp_def_account";
           writable: true;
+        },
+        {
+          name: "address_lookup_table";
+          writable: true;
+        },
+        {
+          name: "lut_program";
+          address: "AddressLookupTab1e1111111111111111111111111";
         },
         {
           name: "arcium_program";
@@ -2583,6 +2631,12 @@ export type ShadowLend = {
       discriminator: [82, 43, 188, 33, 64, 224, 73, 242];
     },
   ];
+  events: [
+    {
+      name: "UserConfidentialState";
+      discriminator: [26, 101, 28, 11, 210, 116, 80, 132];
+    },
+  ];
   errors: [
     {
       code: 6000;
@@ -3152,16 +3206,8 @@ export type ShadowLend = {
             };
           },
           {
-            name: "fallback_clusters";
-            type: {
-              vec: "u32";
-            };
-          },
-          {
-            name: "rejected_clusters";
-            type: {
-              vec: "u32";
-            };
+            name: "lut_offset_slot";
+            type: "u64";
           },
           {
             name: "computation_definitions";
@@ -3647,6 +3693,28 @@ export type ShadowLend = {
           {
             name: "timestamp";
             type: "u64";
+          },
+        ];
+      };
+    },
+    {
+      name: "UserConfidentialState";
+      type: {
+        kind: "struct";
+        fields: [
+          {
+            name: "user_obligation";
+            type: "pubkey";
+          },
+          {
+            name: "encrypted_state";
+            type: {
+              array: ["u8", 96];
+            };
+          },
+          {
+            name: "nonce";
+            type: "u128";
           },
         ];
       };

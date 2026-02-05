@@ -1,5 +1,5 @@
 import { Wallet, Program } from "@coral-xyz/anchor";
-import { PublicKey, SystemProgram } from "@solana/web3.js";
+import { PublicKey, SystemProgram, AddressLookupTableProgram } from "@solana/web3.js";
 import * as fs from "fs";
 import * as path from "path";
 import chalk from "chalk";
@@ -24,7 +24,7 @@ import {
   getArciumProgramInstance,
 } from "../utils/arcium";
 import { getWalletKeypair, loadDeployment, updateDeployment } from "../utils/deployment";
-import { getCompDefAccOffset, getCompDefAccAddress, uploadCircuit, buildFinalizeCompDefTx } from "@arcium-hq/client";
+import { getCompDefAccOffset, getCompDefAccAddress, getLookupTableAddress } from "@arcium-hq/client";
 
 /**
  * Initialize Arcium computation definitions for all circuits
@@ -69,6 +69,12 @@ async function initializeComputationDefinitions() {
     const mxeAccount = getMxeAccount(programId);
     logEntry("MXE Account", mxeAccount.toBase58(), icons.key);
 
+    // Fetch MXE account data to get lutOffsetSlot for v0.7.0
+    const arciumProgram = getArciumProgramInstance(provider);
+    const mxeAccountData = await arciumProgram.account.mxeAccount.fetch(mxeAccount);
+    const lutAddress = getLookupTableAddress(programId, mxeAccountData.lutOffsetSlot);
+    logEntry("LUT Address", lutAddress.toBase58(), icons.link);
+
     // Circuit configuration
     const circuits = [
       { name: "deposit", method: "initDepositCompDef" },
@@ -82,7 +88,6 @@ async function initializeComputationDefinitions() {
     const computationDefinitions: Record<string, string> = {};
 
     logSection("Initializing Definitions");
-    const arciumProgram = getArciumProgramInstance(provider);
 
     for (const circuit of circuits) {
       const circuitName = circuit.name;
@@ -120,6 +125,7 @@ async function initializeComputationDefinitions() {
               authority: wallet.publicKey,
               mxeAccount: mxeAccount,
               compDefAccount: compDefPda,
+              addressLookupTable: lutAddress,
               arciumProgram: arciumProgram.programId,
               systemProgram: SystemProgram.programId,
             })

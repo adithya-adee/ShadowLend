@@ -20,7 +20,10 @@ import {
   logInfo, 
   logWarning, 
   logDivider,
-  icons 
+  icons,
+  getExplorerUrl,
+  logEvent,
+  UserConfidentialStateEvent 
 } from "../utils/config";
 import { getWalletKeypair, loadDeployment } from "../utils/deployment";
 import { 
@@ -287,7 +290,14 @@ async function runSpendTest() {
 
         perf.end("Transaction Submission");
         logSuccess(`Transaction Confirmed: ${txSig}`);
-        logEntry("Explorer", `https://explorer.solana.com/tx/${txSig}?cluster=devnet`, icons.link);
+        logEntry("Explorer", getExplorerUrl(txSig, config.name), icons.link);
+
+        // --- Event Listener ---
+        const eventListener = program.addEventListener("UserConfidentialState", (event: UserConfidentialStateEvent, slot) => {
+            if (userObligation.equals(event.userObligation)) {
+                logEvent(event);
+            }
+        });
 
         // --- MPC Finalization ---
         logSection("MPC Execution");
@@ -366,6 +376,8 @@ async function runSpendTest() {
         logDivider();
         perf.logReport();
         logSuccess("Spend Test Completed Successfully");
+
+        program.removeEventListener(eventListener);
 
     } catch (error) {
         logError("Test Failed", error);

@@ -5,6 +5,8 @@ import { Connection, PublicKey } from "@solana/web3.js";
 import { AnchorProvider, Program, Wallet } from "@coral-xyz/anchor";
 import chalk from "chalk";
 
+export const PROGRAM_ID = process.env.PROGRAM_ID;
+
 /**
  * Network configuration type
  */
@@ -29,8 +31,6 @@ export const NETWORKS: Record<string, NetworkConfig> = {
     arciumClusterOffset: 456, // Current devnet cluster offset
   },
 };
-
-export const PROGRAM_ID = process.env.PROGRAM_ID;
 
 /**
  * Get network configuration from environment or default to devnet
@@ -189,4 +189,26 @@ export function log(message: string, ...args: any[]): void {
 }
 export function logField(label: string, value: string): void {
     logEntry(label, value);
+}
+
+export function getExplorerUrl(txSig: string, networkName: string): string {
+  if (networkName === "localnet") {
+    return `https://explorer.solana.com/tx/${txSig}?cluster=custom&customUrl=http%3A%2F%2F127.0.0.1%3A8899`;
+  }
+  return `https://explorer.solana.com/tx/${txSig}?cluster=${networkName}`;
+}
+
+import { BN } from "@coral-xyz/anchor";
+
+export type UserConfidentialStateEvent = {
+  userObligation: PublicKey;
+  encryptedState: number[];
+  nonce: BN;
+};
+
+export function logEvent(event: UserConfidentialStateEvent): void {
+  logSection("Event Emitted: UserConfidentialState");
+  logEntry("User Obligation", event.userObligation.toBase58(), icons.key);
+  logEntry("Nonce", event.nonce.toString(), icons.info);
+  logEntry("Encrypted State", Buffer.from(event.encryptedState).toString('hex').slice(0, 32) + "...", icons.key);
 }

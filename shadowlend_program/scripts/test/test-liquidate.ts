@@ -18,8 +18,8 @@ import {
   icons 
 } from "../utils/config";
 import { getWalletKeypair, loadDeployment } from "../utils/deployment";
-import { getMxeAccount, generateComputationOffset, checkMxeKeysSet } from "../utils/arcium";
-import { getCompDefAccOffset, getCompDefAccAddress, getClusterAccAddress, getComputationAccAddress, getExecutingPoolAccAddress, getMempoolAccAddress, getFeePoolAccAddress, getClockAccAddress, getArciumProgramId } from "@arcium-hq/client";
+import { getMxeAccount, generateComputationOffset, checkMxeKeysSet, getArciumProgramInstance } from "../utils/arcium";
+import { getCompDefAccOffset, getCompDefAccAddress, getClusterAccAddress, getComputationAccAddress, getExecutingPoolAccAddress, getMempoolAccAddress, getFeePoolAccAddress, getClockAccAddress, getArciumProgramId, getLookupTableAddress } from "@arcium-hq/client";
 import * as idl from "../../target/idl/shadowlend_program.json";
 import { ShadowlendProgram } from "../../target/types/shadowlend_program";
 import * as path from "path";
@@ -175,6 +175,7 @@ async function testLiquidate() {
         const [collateralVault] = PublicKey.findProgramAddressSync([Buffer.from("collateral_vault"), poolPda.toBuffer()], programId);
 
         // Arcium Accounts
+
         const mempoolAccount = getMempoolAccAddress(config.arciumClusterOffset);
         const executingPool = getExecutingPoolAccAddress(config.arciumClusterOffset);
         const computationAccount = getComputationAccAddress(config.arciumClusterOffset, computationOffset);
@@ -218,6 +219,7 @@ async function testLiquidate() {
                 associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
                 systemProgram: SystemProgram.programId,
                 arciumProgram: arciumProgramId,
+
             })
             .signers([liquidator])
             .rpc();

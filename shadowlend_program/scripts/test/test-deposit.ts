@@ -19,13 +19,17 @@ import {
   logInfo, 
   logWarning, 
   logDivider, 
-  icons 
+  icons,
+  getExplorerUrl,
+  logEvent,
+  UserConfidentialStateEvent
 } from "../utils/config";
 import { getWalletKeypair, loadDeployment } from "../utils/deployment";
 import { 
     getMxeAccount, 
     checkMxeKeysSet, 
     generateComputationOffset,
+    getArciumProgramInstance,
 } from "../utils/arcium";
 import { 
     getCompDefAccOffset, 
@@ -36,7 +40,7 @@ import {
     getMempoolAccAddress, 
     getFeePoolAccAddress, 
     getClockAccAddress, 
-    getArciumProgramId 
+    getArciumProgramId,
 } from "@arcium-hq/client";
 import { getOrCreateX25519Key } from "../utils/keys";
 import * as idl from "../../target/idl/shadowlend_program.json";
@@ -201,7 +205,14 @@ async function runDepositTest() {
         
         perf.end("Transaction Submission");
         logSuccess(`Transaction Confirmed: ${txSig}`);
-        logEntry("Explorer", `https://explorer.solana.com/tx/${txSig}?cluster=devnet`, icons.link);
+        logEntry("Explorer", getExplorerUrl(txSig, config.name), icons.link);
+
+        // --- Event Listener ---
+        const eventListener = program.addEventListener("UserConfidentialState", (event: UserConfidentialStateEvent, slot) => {
+            if (userObligation.equals(event.userObligation)) {
+                logEvent(event);
+            }
+        });
 
         // --- Immediate Verification ---
         perf.start("Vault Verification");
@@ -288,6 +299,8 @@ async function runDepositTest() {
         logDivider();
         perf.logReport();
         logSuccess("Deposit Test Completed Successfully");
+        
+        program.removeEventListener(eventListener);
 
     } catch (error) {
         logError("Test Failed", error);

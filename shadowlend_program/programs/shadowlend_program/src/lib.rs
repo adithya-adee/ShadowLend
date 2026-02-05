@@ -12,12 +12,20 @@ pub use state::*;
 // Computation definition offsets for Arcium circuits
 pub const COMP_DEF_OFFSET_DEPOSIT: u32 = comp_def_offset("deposit");
 pub const COMP_DEF_OFFSET_WITHDRAW: u32 = comp_def_offset("withdraw");
+
+#[event]
+pub struct UserConfidentialState {
+    pub user_obligation: Pubkey,
+    pub encrypted_state: [u8; 96], 
+    pub nonce: u128,
+}
+
 pub const COMP_DEF_OFFSET_BORROW: u32 = comp_def_offset("borrow");
 pub const COMP_DEF_OFFSET_REPAY: u32 = comp_def_offset("repay");
 pub const COMP_DEF_OFFSET_LIQUIDATE: u32 = comp_def_offset("liquidate");
 pub const COMP_DEF_OFFSET_SPEND: u32 = comp_def_offset("spend");
 
-declare_id!("EKPFnwquVeawEBxn5iaNw9NXpyh1Axto7P3C1EHBXScy");
+declare_id!("CiCw5JPuC7oHRvEzhcmKYYBmYDVSUZxQG4hHMAarPUvE");
 
 #[arcium_program]
 pub mod shadowlend_program {
@@ -82,15 +90,11 @@ pub mod shadowlend_program {
         ctx: Context<DepositCallback>,
         output: SignedComputationOutputs<DepositOutput>,
     ) -> Result<()> {
-        msg!("Deposit callback START");
-        msg!("Callback context loaded. Verifying output...");
-
         let result = match output.verify_output(
             &ctx.accounts.cluster_account,
             &ctx.accounts.computation_account,
         ) {
             Ok(o) => {
-                msg!("Output verified successfully.");
                 o
             }
             Err(e) => {
@@ -100,10 +104,6 @@ pub mod shadowlend_program {
         };
 
         let user_obligation = &mut ctx.accounts.user_obligation;
-        msg!(
-            "Updating user obligation. Old nonce: {}",
-            user_obligation.state_nonce
-        );
 
         // Access UserState fields from result.field_0 which is SharedEncryptedStruct
         let state = result.field_0;
@@ -119,10 +119,12 @@ pub mod shadowlend_program {
         user_obligation.is_initialized = true;
         user_obligation.state_nonce += 1;
 
-        msg!(
-            "Deposit callback completed. New nonce: {}",
-            user_obligation.state_nonce
-        );
+        emit!(UserConfidentialState {
+            user_obligation: user_obligation.key(),
+            encrypted_state: user_obligation.encrypted_state,
+            nonce: user_obligation.state_nonce,
+        });
+
         Ok(())
     }
 
@@ -162,15 +164,11 @@ pub mod shadowlend_program {
         ctx: Context<BorrowCallback>,
         output: SignedComputationOutputs<BorrowOutput>,
     ) -> Result<()> {
-        msg!("Borrow callback START");
-        msg!("Callback context loaded. Verifying output...");
-
         let result = match output.verify_output(
             &ctx.accounts.cluster_account,
             &ctx.accounts.computation_account,
         ) {
             Ok(o) => {
-                msg!("Output verified successfully.");
                 o
             }
             Err(e) => {
@@ -183,14 +181,8 @@ pub mod shadowlend_program {
         let state = inner.field_0;
         let approved = inner.field_1;
 
-        msg!("Circuit result - Approved: {}", approved);
-
         if approved == 1 {
             let user_obligation = &mut ctx.accounts.user_obligation;
-            msg!(
-                "Updating user obligation. Old nonce: {}",
-                user_obligation.state_nonce
-            );
 
             let c = &state.ciphertexts;
             if c.len() >= 3 {
@@ -201,10 +193,11 @@ pub mod shadowlend_program {
 
             user_obligation.state_nonce += 1;
 
-            msg!(
-                "Borrow approved. State updated. New nonce: {}",
-                user_obligation.state_nonce
-            );
+            emit!(UserConfidentialState {
+                user_obligation: user_obligation.key(),
+                encrypted_state: user_obligation.encrypted_state,
+                nonce: user_obligation.state_nonce,
+            });
         } else {
             msg!("Borrow rejected by health check (approved=0)");
         }
@@ -277,6 +270,12 @@ pub mod shadowlend_program {
 
             user_obligation.state_nonce += 1;
 
+            emit!(UserConfidentialState {
+                user_obligation: user_obligation.key(),
+                encrypted_state: user_obligation.encrypted_state,
+                nonce: user_obligation.state_nonce,
+            });
+
             // Vault PDA signs the transfer
             let pool_key = ctx.accounts.pool.key();
             let seeds: &[&[u8]] = &[
@@ -347,7 +346,7 @@ pub mod shadowlend_program {
             &ctx.accounts.cluster_account,
             &ctx.accounts.computation_account,
         ) {
-            Ok(o) => o, // Changed to 'o' to keep the full struct
+            Ok(o) => o, 
             Err(e) => {
                 msg!("Repay verification failed: {}", e);
                 return Err(ErrorCode::AbortedComputation.into());
@@ -367,7 +366,12 @@ pub mod shadowlend_program {
         user_obligation.is_initialized = true; // Ensure flag is set on first interaction if any
         user_obligation.state_nonce += 1;
 
-        msg!("Repay callback completed");
+        emit!(UserConfidentialState {
+            user_obligation: user_obligation.key(),
+            encrypted_state: user_obligation.encrypted_state,
+            nonce: user_obligation.state_nonce,
+        });
+
         Ok(())
     }
 
@@ -398,8 +402,6 @@ pub mod shadowlend_program {
         ctx: Context<LiquidateCallback>,
         output: SignedComputationOutputs<LiquidateOutput>,
     ) -> Result<()> {
-        msg!("Liquidate callback START");
-
         let result = match output.verify_output(
             &ctx.accounts.cluster_account,
             &ctx.accounts.computation_account,
@@ -430,6 +432,12 @@ pub mod shadowlend_program {
         }
 
         user_obligation.state_nonce += 1;
+
+        emit!(UserConfidentialState {
+            user_obligation: user_obligation.key(),
+            encrypted_state: user_obligation.encrypted_state,
+            nonce: user_obligation.state_nonce,
+        });
 
         if is_liquidatable == 1 {
             msg!("Liquidation SUCCESS. User was unhealthy.");
@@ -577,6 +585,12 @@ pub mod shadowlend_program {
             }
 
             user_obligation.state_nonce += 1;
+
+            emit!(UserConfidentialState {
+                user_obligation: user_obligation.key(),
+                encrypted_state: user_obligation.encrypted_state,
+                nonce: user_obligation.state_nonce,
+            });
 
             // Prepare PDA seeds for the borrow vault to sign the outgoing transfer
             let pool_key = ctx.accounts.pool.key();
